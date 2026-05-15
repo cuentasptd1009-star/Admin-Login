@@ -21,14 +21,18 @@ export default defineConfig({
     runtimeErrorOverlay(),
     legacy({
       targets: [
-        "chrome >= 49",
-        "firefox >= 52",
-        "safari >= 10",
-        "edge >= 15",
-        "samsung >= 5",
-        "not ie 11",
+        "chrome >= 38",
+        "firefox >= 36",
+        "safari >= 8",
+        "edge >= 12",
+        "samsung >= 2",
+        "opera >= 30",
+        "android >= 4.4",
       ],
-      additionalLegacyPolyfills: ["regenerator-runtime/runtime"],
+      polyfills: true,
+      additionalLegacyPolyfills: [
+        "regenerator-runtime/runtime",
+      ],
       renderLegacyChunks: true,
       modernPolyfills: true,
     }),
@@ -55,9 +59,10 @@ export default defineConfig({
   },
   root: path.resolve(import.meta.dirname),
   build: {
-    target: ["es2015", "chrome49", "firefox52", "safari10", "edge15"],
+    target: ["es2015", "chrome38", "firefox36", "safari8"],
     outDir: path.resolve(import.meta.dirname, "dist/public"),
     emptyOutDir: true,
+    cssTarget: ["chrome38", "firefox36", "safari8"],
   },
   server: {
     port,
