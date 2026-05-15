@@ -53,7 +53,13 @@ import { HeroBanner, type HeroBannerItem } from '@/components/HeroBanner';
 import { fetchSeries, type SeriesItem } from '@/lib/api';
 
 type TabKey = 'home' | 'channels' | 'movies' | 'series';
-type NavZone = 'tabs' | 'search' | 'mic' | 'actions' | 'rows' | 'miniplayer' | 'hero';
+type NavZone = 'sidebar' | 'rows' | 'miniplayer' | 'hero';
+type SidebarItem =
+  | { type: 'profile' }
+  | { type: 'search' }
+  | { type: 'mic' }
+  | { type: 'nav'; navIdx: number }
+  | { type: 'action'; actionKey: string; actionBtnIdx: number };
 
 function getChannelGridCols(): number {
   const w = window.innerWidth;
@@ -223,15 +229,9 @@ export default function Home() {
   const [activeTab, setActiveTab] = useState<TabKey>(initialTab);
   const [searchQuery, setSearchQuery] = useState('');
   const [zone, setZone] = useState<NavZone>('rows');
-  const [tabIndex, setTabIndex] = useState(() => {
-    if (initialTab === 'series') return 1;
-    if (initialTab === 'movies') return 2;
-    if (initialTab === 'channels') return 3;
-    return 0;
-  });
+  const [sidebarItemIndex, setSidebarItemIndex] = useState(0);
   const [rowIndex, setRowIndex] = useState(0);
   const [colIndex, setColIndex] = useState(0);
-  const [actionIndex, setActionIndex] = useState(0);
   const [heroBtnIndex, setHeroBtnIndex] = useState(0);
   const [heroBannerIdx, setHeroBannerIdx] = useState(0);
   const [voiceError, setVoiceError] = useState<string | null>(null);
@@ -534,6 +534,16 @@ export default function Home() {
     { key: 'logout', label: 'Salir', action: handleLogout, icon: LogOut },
   ], [session, showInstallButton, openProfile, handleInstall, handleLogout]);
 
+  const sidebarItems = useMemo<SidebarItem[]>(() => {
+    const items: SidebarItem[] = [];
+    if (session?.type === 'user') items.push({ type: 'profile' });
+    items.push({ type: 'search' });
+    if (voiceSupported) items.push({ type: 'mic' });
+    navItems.forEach((_, navIdx) => items.push({ type: 'nav', navIdx }));
+    actionButtons.filter(b => b.key !== 'profile').forEach((b, i) => items.push({ type: 'action', actionKey: b.key, actionBtnIdx: i }));
+    return items;
+  }, [session, voiceSupported, navItems, actionButtons]);
+
   const isLoading = channelsLoading || moviesLoading || ((activeTab === 'series' || activeTab === 'home') && seriesLoading);
   const showHero = !searchQuery && heroBannerItems.length > 0 && activeTab !== 'channels';
 
@@ -542,44 +552,49 @@ export default function Home() {
       if (showProfile || showHint || showShortcutHint) return;
       const isInputFocused = document.activeElement === searchRef.current;
       if (isInputFocused) {
-        if (['Escape','ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(e.key)) { searchRef.current?.blur(); setZone('rows'); } else { return; }
+        if (['Escape','ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(e.key)) { searchRef.current?.blur(); }
+        else { return; }
         return;
       }
 
-      if (zone === 'tabs') {
+      if (zone === 'sidebar') {
+        const curItem = sidebarItems[sidebarItemIndex];
         switch (e.key) {
           case 'ArrowDown': {
             e.preventDefault();
-            if (tabIndex < tabs.length - 1) {
-              const next = tabIndex + 1;
-              setTabIndex(next);
-              setActiveTab(tabs[next].key);
-              setRowIndex(0); setColIndex(0);
-            } else { setZone('actions'); setActionIndex(0); }
+            const next = Math.min(sidebarItemIndex + 1, sidebarItems.length - 1);
+            setSidebarItemIndex(next);
+            const nextItem = sidebarItems[next];
+            if (nextItem?.type === 'nav') { setActiveTab(navItems[nextItem.navIdx].key); setRowIndex(0); setColIndex(0); }
             break;
           }
           case 'ArrowUp': {
             e.preventDefault();
-            if (tabIndex > 0) {
-              const prev = tabIndex - 1;
-              setTabIndex(prev);
-              setActiveTab(tabs[prev].key);
-              setRowIndex(0); setColIndex(0);
-            }
+            const prev = Math.max(sidebarItemIndex - 1, 0);
+            setSidebarItemIndex(prev);
+            const prevItem = sidebarItems[prev];
+            if (prevItem?.type === 'nav') { setActiveTab(navItems[prevItem.navIdx].key); setRowIndex(0); setColIndex(0); }
             break;
           }
-          case 'Enter':
-            e.preventDefault();
-            setActiveTab(tabs[tabIndex].key);
-            setRowIndex(0); setColIndex(0);
-            setShowSidebar(false);
-            setZone('rows');
-            break;
           case 'ArrowRight':
             e.preventDefault();
             setShowSidebar(false);
             if (showHero) { setZone('hero'); setHeroBtnIndex(0); }
             else { setZone('rows'); setRowIndex(0); setColIndex(0); }
+            break;
+          case 'Enter':
+            e.preventDefault();
+            if (!curItem) break;
+            if (curItem.type === 'profile') { openProfile(); setShowSidebar(false); }
+            else if (curItem.type === 'search') { openKeyboard(searchRef.current, { value: searchQuery, onChange: (v) => { setSearchQuery(v); setRowIndex(0); setColIndex(0); }, label: 'Buscar...' }); }
+            else if (curItem.type === 'mic') { isListening ? stopListening() : startListening(); }
+            else if (curItem.type === 'nav') { setActiveTab(navItems[curItem.navIdx].key); setRowIndex(0); setColIndex(0); setShowSidebar(false); setZone('rows'); }
+            else if (curItem.type === 'action') { actionButtons.filter(b => b.key !== 'profile')[curItem.actionBtnIdx]?.action(); }
+            break;
+          case 'Escape': case 'Backspace':
+            e.preventDefault();
+            setShowSidebar(false);
+            setZone('rows');
             break;
         }
 
@@ -588,7 +603,7 @@ export default function Home() {
           case 'ArrowLeft':
             e.preventDefault();
             if (heroBtnIndex > 0) setHeroBtnIndex(0);
-            else { setZone('tabs'); setShowSidebar(true); }
+            else { setZone('sidebar'); setShowSidebar(true); }
             break;
           case 'ArrowRight':
             e.preventDefault();
@@ -601,7 +616,7 @@ export default function Home() {
             break;
           case 'ArrowUp':
             e.preventDefault();
-            setZone('tabs'); setShowSidebar(true);
+            setZone('sidebar'); setShowSidebar(true);
             break;
           case 'Enter': {
             e.preventDefault();
@@ -614,42 +629,7 @@ export default function Home() {
           }
           case 'Escape': case 'Backspace':
             e.preventDefault();
-            setZone('tabs');
-            break;
-        }
-
-      } else if (zone === 'search') {
-        switch (e.key) {
-          case 'ArrowLeft': e.preventDefault(); setZone('tabs'); break;
-          case 'Enter': e.preventDefault(); openKeyboard(searchRef.current, { value: searchQuery, onChange: (v) => { setSearchQuery(v); setRowIndex(0); setColIndex(0); }, label: 'Buscar...' }); break;
-          case 'ArrowDown': e.preventDefault(); setZone('rows'); setRowIndex(0); setColIndex(0); break;
-          case 'Escape': case 'Backspace': e.preventDefault(); setZone('tabs'); setShowSidebar(true); break;
-        }
-
-      } else if (zone === 'actions') {
-        switch (e.key) {
-          case 'ArrowUp':
-            e.preventDefault();
-            if (actionIndex > 0) setActionIndex(p => p - 1);
-            else { setZone('tabs'); setTabIndex(tabs.length - 1); }
-            break;
-          case 'ArrowDown':
-            e.preventDefault();
-            if (actionIndex < actionButtons.length - 1) setActionIndex(p => p + 1);
-            else { const _mini = getMiniPlayerState(); if (_mini?.isMinimized) { updateMiniPlayerState({ isFocused: true }); setZone('miniplayer'); } else { setZone('rows'); setRowIndex(0); setColIndex(0); } }
-            break;
-          case 'ArrowRight':
-            e.preventDefault();
-            setShowSidebar(false);
-            setZone('rows'); setRowIndex(0); setColIndex(0);
-            break;
-          case 'Enter':
-            e.preventDefault();
-            actionButtons[actionIndex]?.action();
-            break;
-          case 'Escape': case 'Backspace':
-            e.preventDefault();
-            setZone('tabs');
+            setZone('sidebar'); setShowSidebar(true);
             break;
         }
 
@@ -696,7 +676,7 @@ export default function Home() {
           case 'ArrowLeft':
             e.preventDefault();
             if (colIndex > 0) setColIndex(p => Math.max(p - 1, 0));
-            else { setZone('tabs'); setShowSidebar(true); }
+            else { setZone('sidebar'); setShowSidebar(true); }
             break;
           case 'ArrowDown': {
             e.preventDefault();
@@ -745,13 +725,13 @@ export default function Home() {
             }
             break;
           }
-          case 'Escape': case 'Backspace': e.preventDefault(); setZone('tabs'); setShowSidebar(true); break;
+          case 'Escape': case 'Backspace': e.preventDefault(); setZone('sidebar'); setShowSidebar(true); break;
         }
       }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [zone, tabIndex, rowIndex, colIndex, actionIndex, heroBtnIndex, heroBannerIdx, activeRows, seriesRows, activeTab, playItem, playSeriesItem, tabs, actionButtons, showProfile, showHint, showShortcutHint, voiceSupported, isListening, startListening, stopListening, showHero, hoveredHero, heroBannerItems]);  // eslint-disable-line react-hooks/exhaustive-deps
+  }, [zone, sidebarItemIndex, sidebarItems, rowIndex, colIndex, heroBtnIndex, heroBannerIdx, activeRows, seriesRows, activeTab, playItem, playSeriesItem, navItems, actionButtons, showProfile, showHint, showShortcutHint, voiceSupported, isListening, startListening, stopListening, showHero, hoveredHero, heroBannerItems, openKeyboard, openProfile, searchQuery]);  // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <div className="min-h-screen bg-[#141414] text-white flex select-none">
@@ -774,7 +754,7 @@ export default function Home() {
       {/* ── NARROW ICON RAIL (desktop, always visible) ── */}
       <div
         className="hidden md:flex fixed left-0 top-0 h-full z-50 w-16 bg-[#0a0a0a] border-r border-white/5 flex-col items-center py-4 gap-1"
-        onMouseEnter={() => { setShowSidebar(true); setZone('tabs'); }}
+        onMouseEnter={() => { setShowSidebar(true); setZone('sidebar'); }}
       >
         <div className="mb-3 flex items-center justify-center w-10 h-10">
           <img src={logo} alt="Super TV" className="h-7 w-auto object-contain" />
@@ -786,7 +766,7 @@ export default function Home() {
           return (
             <button
               key={item.key}
-              onClick={() => { setActiveTab(item.key); setTabIndex(i); setRowIndex(0); setColIndex(0); setZone('rows'); }}
+              onClick={() => { setActiveTab(item.key); setRowIndex(0); setColIndex(0); setZone('rows'); }}
               title={item.label}
               className={`w-10 h-10 flex items-center justify-center rounded-xl transition-all duration-150
                 ${isActive ? 'bg-white/10 text-white' : 'text-white/35 hover:text-white hover:bg-white/8'}`}
@@ -828,113 +808,134 @@ export default function Home() {
 
       {/* ── FULL SIDEBAR OVERLAY ── */}
       {showSidebar && <div className="fixed inset-0 z-[55] bg-black/60 backdrop-blur-sm" onClick={() => { setShowSidebar(false); setZone('rows'); }} />}
-      <aside
-        className={`fixed left-0 top-0 h-full z-[60] bg-[#0d0d0d] border-r border-white/8 flex flex-col transition-all duration-300 w-72 shadow-2xl
-        ${showSidebar ? 'translate-x-0' : '-translate-x-full'}`}
-        onMouseLeave={() => { setShowSidebar(false); setZone('rows'); }}
-      >
-
-        {/* Logo */}
-        <div className="p-5 pb-4 flex items-center justify-between">
-          <img src={logo} alt="Super TV" className="h-9 w-auto" />
-          <button className="p-1.5 rounded-lg hover:bg-white/10 text-white/50" onClick={() => { setShowSidebar(false); setZone('rows'); }}>
-            <X className="w-4 h-4" />
-          </button>
-        </div>
-
-        {/* User info */}
-        {session?.type === 'user' && (
-          <button onClick={() => { openProfile(); setShowSidebar(false); }} className={`mx-3 mb-3 flex items-center gap-3 p-3 rounded-xl hover:bg-white/8 transition-colors text-left ${zone === 'actions' && actionIndex === 0 ? 'ring-2 ring-primary bg-white/8' : ''}`}>
-            <div className="w-10 h-10 rounded-full overflow-hidden border-2 border-white/20 flex-shrink-0 bg-white/10 flex items-center justify-center">
-              {session.avatarUrl
-                ? <img src={session.avatarUrl} alt="Avatar" className="w-full h-full object-cover" />
-                : <UserCircle2 className="w-6 h-6 text-white/50" />
-              }
+      {(() => {
+        const si = sidebarItems[sidebarItemIndex];
+        const isSbFocused = (type: SidebarItem['type'], extra?: number) =>
+          zone === 'sidebar' && si?.type === type && (extra === undefined || (si.type === 'nav' && si.navIdx === extra) || (si.type === 'action' && si.actionBtnIdx === extra));
+        return (
+          <aside
+            className={`fixed left-0 top-0 h-full z-[60] bg-[#0d0d0d] border-r border-white/8 flex flex-col transition-all duration-300 w-72 shadow-2xl
+            ${showSidebar ? 'translate-x-0' : '-translate-x-full'}`}
+            onMouseLeave={() => { setShowSidebar(false); setZone('rows'); }}
+          >
+            {/* Logo */}
+            <div className="p-5 pb-4 flex items-center justify-between">
+              <img src={logo} alt="Super TV" className="h-9 w-auto" />
+              <button className="p-1.5 rounded-lg hover:bg-white/10 text-white/50" onClick={() => { setShowSidebar(false); setZone('rows'); }}>
+                <X className="w-4 h-4" />
+              </button>
             </div>
-            <div className="min-w-0 flex-1">
-              <p className="text-sm font-semibold text-white truncate">{session.displayName || session.codeName || 'Usuario'}</p>
-              {session.expiresAt && (
-                <p className="text-[10px] text-white/40 truncate">Vence: {(() => { const d = new Date(session.expiresAt!); const m = ['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic']; return `${d.getDate()} ${m[d.getMonth()]} ${d.getFullYear()}`; })()}</p>
-              )}
-            </div>
-          </button>
-        )}
 
-        {/* Search + voice — combined, below user */}
-        <div className="px-3 pb-3">
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-white/30 pointer-events-none" />
-            <input
-              ref={searchRef}
-              value={searchQuery}
-              onChange={e => { setSearchQuery(e.target.value); setRowIndex(0); setColIndex(0); }}
-              onFocus={() => setZone('search')}
-              placeholder={isListening ? 'Escuchando...' : 'Buscar...'}
-              className={`w-full bg-white/7 border border-white/10 rounded-xl pl-9 ${voiceSupported ? 'pr-9' : 'pr-4'} py-2.5 text-sm text-white placeholder:text-white/30 focus:outline-none focus:border-white/20 transition-colors ${zone === 'search' ? 'border-white/25 bg-white/10' : ''} ${isListening ? 'border-red-500/50' : ''}`}
-            />
-            {searchQuery
-              ? <button onClick={() => setSearchQuery('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-white/30 hover:text-white"><X className="w-3.5 h-3.5" /></button>
-              : voiceSupported && (
-                <button onClick={() => isListening ? stopListening() : startListening()}
-                  className={`absolute right-2.5 top-1/2 -translate-y-1/2 p-0.5 rounded-lg transition-colors ${isListening ? 'text-red-400 bg-red-500/15' : 'text-white/35 hover:text-white hover:bg-white/10'}`}>
-                  {isListening ? <MicOff className="w-4 h-4" /> : <Mic className="w-4 h-4" />}
-                </button>
-              )
-            }
-          </div>
-          {voiceError && <p className="text-[10px] text-red-400 mt-1 px-1">{voiceError}</p>}
-        </div>
-
-        <div className="mx-3 mb-3 h-px bg-white/8" />
-
-        {/* Nav items */}
-        <nav className="px-3 space-y-1">
-          {navItems.map((item, i) => {
-            const Icon = item.icon;
-            const isActive = activeTab === item.key;
-            const isFocused = zone === 'tabs' && tabIndex === i;
-            return (
+            {/* User info */}
+            {session?.type === 'user' && (
               <button
-                key={item.key}
-                onMouseEnter={() => { setActiveTab(item.key); setTabIndex(i); setRowIndex(0); setColIndex(0); }}
-                onClick={() => { setActiveTab(item.key); setTabIndex(i); setRowIndex(0); setColIndex(0); setZone('rows'); setShowSidebar(false); }}
-                className={`w-full flex items-center gap-3.5 px-4 py-3 rounded-xl text-sm font-medium transition-all duration-150
-                  ${isActive ? 'bg-white/12 text-white' : 'text-white/55 hover:text-white hover:bg-white/7'}
-                  ${isFocused ? 'ring-2 ring-primary/60' : ''}`}
+                onClick={() => { openProfile(); setShowSidebar(false); }}
+                onMouseEnter={() => { const idx = sidebarItems.findIndex(s => s.type === 'profile'); if (idx >= 0) setSidebarItemIndex(idx); }}
+                className={`mx-3 mb-3 flex items-center gap-3 p-3 rounded-xl hover:bg-white/8 transition-colors text-left ${isSbFocused('profile') ? 'ring-2 ring-primary bg-white/8' : ''}`}
               >
-                <Icon className={`w-5 h-5 flex-shrink-0 transition-colors ${isActive ? 'text-orange-400' : ''}`} />
-                {item.label}
-                {isActive && <div className="ml-auto w-1.5 h-1.5 rounded-full bg-orange-400" />}
+                <div className="w-10 h-10 rounded-full overflow-hidden border-2 border-white/20 flex-shrink-0 bg-white/10 flex items-center justify-center">
+                  {session.avatarUrl
+                    ? <img src={session.avatarUrl} alt="Avatar" className="w-full h-full object-cover" />
+                    : <UserCircle2 className="w-6 h-6 text-white/50" />
+                  }
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-semibold text-white truncate">{session.displayName || session.codeName || 'Usuario'}</p>
+                  {session.expiresAt && (
+                    <p className="text-[10px] text-white/40 truncate">Vence: {(() => { const d = new Date(session.expiresAt!); const m = ['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic']; return `${d.getDate()} ${m[d.getMonth()]} ${d.getFullYear()}`; })()}</p>
+                  )}
+                </div>
               </button>
-            );
-          })}
-        </nav>
+            )}
 
-        <div className="mx-3 my-3 h-px bg-white/8" />
-
-        {/* Actions */}
-        <div className="px-3 pb-5 space-y-0.5">
-          {actionButtons.filter(b => b.key !== 'profile').map((btn, bIdx) => {
-            const Icon = btn.icon;
-            const isLogout = btn.key === 'logout';
-            const profileOffset = session?.type === 'user' ? 1 : 0;
-            const isFocused = zone === 'actions' && actionIndex === profileOffset + bIdx;
-            return (
-              <button key={btn.key} onClick={btn.action} className={`w-full flex items-center gap-3.5 px-4 py-2.5 rounded-xl text-sm font-medium transition-all ${isLogout ? 'text-white/35 hover:text-red-400 hover:bg-red-500/10' : 'text-white/45 hover:text-white hover:bg-white/7'} ${isFocused ? (isLogout ? 'ring-2 ring-red-400/60 text-red-400 bg-red-500/10' : 'ring-2 ring-primary/60 text-white bg-white/10') : ''}`}>
-                <Icon className="w-4 h-4 flex-shrink-0" />
-                {btn.label}
+            {/* Search bar */}
+            <div className="px-3 pb-2">
+              <button
+                onClick={() => { const idx = sidebarItems.findIndex(s => s.type === 'search'); if (idx >= 0) setSidebarItemIndex(idx); openKeyboard(searchRef.current, { value: searchQuery, onChange: (v) => { setSearchQuery(v); setRowIndex(0); setColIndex(0); }, label: 'Buscar...' }); }}
+                onMouseEnter={() => { const idx = sidebarItems.findIndex(s => s.type === 'search'); if (idx >= 0) setSidebarItemIndex(idx); }}
+                className={`w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-sm transition-all duration-150 bg-white/7 border ${isSbFocused('search') ? 'border-white/30 bg-white/12 ring-2 ring-primary/60' : 'border-white/10 hover:bg-white/10'} ${isListening ? 'border-red-500/50' : ''}`}
+              >
+                <Search className="w-4 h-4 text-white/30 flex-shrink-0" />
+                <span className={`flex-1 text-left truncate ${searchQuery ? 'text-white' : 'text-white/30'}`}>{searchQuery || (isListening ? 'Escuchando...' : 'Buscar...')}</span>
+                {searchQuery && <button onClick={(ev) => { ev.stopPropagation(); setSearchQuery(''); }} className="text-white/30 hover:text-white"><X className="w-3.5 h-3.5" /></button>}
               </button>
-            );
-          })}
-        </div>
-      </aside>
+            </div>
+
+            {/* Voice search button */}
+            {voiceSupported && (
+              <div className="px-3 pb-3">
+                <button
+                  onClick={() => { isListening ? stopListening() : startListening(); }}
+                  onMouseEnter={() => { const idx = sidebarItems.findIndex(s => s.type === 'mic'); if (idx >= 0) setSidebarItemIndex(idx); }}
+                  className={`w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-150
+                    ${isListening ? 'text-red-400 bg-red-500/15 border border-red-500/40' : 'text-white/45 hover:text-white hover:bg-white/7 border border-transparent'}
+                    ${isSbFocused('mic') ? 'ring-2 ring-primary/60 bg-white/10 text-white' : ''}`}
+                >
+                  {isListening ? <MicOff className="w-4 h-4 flex-shrink-0" /> : <Mic className="w-4 h-4 flex-shrink-0" />}
+                  {isListening ? 'Detener búsqueda por voz' : 'Buscar por voz'}
+                </button>
+                {voiceError && <p className="text-[10px] text-red-400 mt-1 px-1">{voiceError}</p>}
+              </div>
+            )}
+
+            <div className="mx-3 mb-3 h-px bg-white/8" />
+
+            {/* Nav items */}
+            <nav className="px-3 space-y-1">
+              {navItems.map((item, i) => {
+                const Icon = item.icon;
+                const isActive = activeTab === item.key;
+                const isFocused = isSbFocused('nav', i);
+                return (
+                  <button
+                    key={item.key}
+                    onMouseEnter={() => { setActiveTab(item.key); const idx = sidebarItems.findIndex(s => s.type === 'nav' && s.navIdx === i); if (idx >= 0) setSidebarItemIndex(idx); setRowIndex(0); setColIndex(0); }}
+                    onClick={() => { setActiveTab(item.key); setRowIndex(0); setColIndex(0); setZone('rows'); setShowSidebar(false); }}
+                    className={`w-full flex items-center gap-3.5 px-4 py-3 rounded-xl text-sm font-medium transition-all duration-150
+                      ${isActive ? 'bg-white/12 text-white' : 'text-white/55 hover:text-white hover:bg-white/7'}
+                      ${isFocused ? 'ring-2 ring-primary/60' : ''}`}
+                  >
+                    <Icon className={`w-5 h-5 flex-shrink-0 transition-colors ${isActive ? 'text-orange-400' : ''}`} />
+                    {item.label}
+                    {isActive && <div className="ml-auto w-1.5 h-1.5 rounded-full bg-orange-400" />}
+                  </button>
+                );
+              })}
+            </nav>
+
+            <div className="mx-3 my-3 h-px bg-white/8" />
+
+            {/* Actions */}
+            <div className="px-3 pb-5 space-y-0.5">
+              {actionButtons.filter(b => b.key !== 'profile').map((btn, bIdx) => {
+                const Icon = btn.icon;
+                const isLogout = btn.key === 'logout';
+                const isFocused = isSbFocused('action', bIdx);
+                return (
+                  <button
+                    key={btn.key}
+                    onMouseEnter={() => { const idx = sidebarItems.findIndex(s => s.type === 'action' && s.actionBtnIdx === bIdx); if (idx >= 0) setSidebarItemIndex(idx); }}
+                    onClick={btn.action}
+                    className={`w-full flex items-center gap-3.5 px-4 py-2.5 rounded-xl text-sm font-medium transition-all
+                      ${isLogout ? 'text-white/35 hover:text-red-400 hover:bg-red-500/10' : 'text-white/45 hover:text-white hover:bg-white/7'}
+                      ${isFocused ? (isLogout ? 'ring-2 ring-red-400/60 text-red-400 bg-red-500/10' : 'ring-2 ring-primary/60 text-white bg-white/10') : ''}`}
+                  >
+                    <Icon className="w-4 h-4 flex-shrink-0" />
+                    {btn.label}
+                  </button>
+                );
+              })}
+            </div>
+          </aside>
+        );
+      })()}
 
       {/* ── MAIN CONTENT ── */}
       <main className="flex-1 min-h-screen flex flex-col pb-16 md:pb-0 overflow-x-hidden md:ml-16" ref={mainRef}>
 
         {/* Mobile top bar */}
         <div className="md:hidden sticky top-0 z-30 flex items-center gap-3 px-4 py-3 bg-[#0d0d0d] border-b border-white/5">
-          <button onClick={() => { setShowSidebar(true); setZone('tabs'); }} className="p-2 rounded-lg hover:bg-white/10 text-white/60 hover:text-white transition-colors">
+          <button onClick={() => { setShowSidebar(true); setZone('sidebar'); }} className="p-2 rounded-lg hover:bg-white/10 text-white/60 hover:text-white transition-colors">
             <Menu className="w-5 h-5" />
           </button>
           <img src={logo} alt="Super TV" className="h-7 w-auto" />
