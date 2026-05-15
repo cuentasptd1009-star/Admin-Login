@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useLocation } from 'wouter';
-import { Play, Pause, Volume2, VolumeX, Maximize, Minimize, ArrowLeft, RotateCcw, SkipBack, SkipForward, AlertTriangle, ChevronRight } from 'lucide-react';
+import { Play, Pause, Volume2, VolumeX, Maximize, Minimize, ArrowLeft, RotateCcw, SkipBack, SkipForward, AlertTriangle, ChevronRight, Gauge } from 'lucide-react';
 import logo from '@assets/imagen_1777670460131.png';
 import { getProgress, saveProgress, addToHistory, saveEpisodeProgress, getEpisodeProgress } from '@/lib/user-data';
 
@@ -75,6 +75,12 @@ export default function VodPlayerPage() {
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
   const [showNextEp, setShowNextEp] = useState(false);
+
+  const hlsInstanceRef = useRef<any>(null);
+  const [qualityLevels, setQualityLevels] = useState<Array<{ index: number; label: string; bitrate: number }>>([]);
+  const [selectedQuality, setSelectedQuality] = useState(-1);
+  const [showQualityMenu, setShowQualityMenu] = useState(false);
+  const [bandwidth, setBandwidth] = useState(0);
 
   const showControlsTemporarily = useCallback(() => {
     setShowControls(true);
@@ -190,20 +196,46 @@ export default function VodPlayerPage() {
           const Hls = (await import('hls.js')).default;
           if (destroyed) return;
           if (Hls.isSupported()) {
+            const conn = (navigator as any).connection || (navigator as any).mozConnection || (navigator as any).webkitConnection;
+            const downlinkMbps: number = conn?.downlink ?? 0;
             const hls = new Hls({
-              enableWorker: false,
+              enableWorker: true,
               maxBufferLength: 30,
               maxMaxBufferLength: 60,
               startFragPrefetch: false,
+              startLevel: -1,
+              abrEwmaDefaultEstimate: downlinkMbps > 0 ? downlinkMbps * 1_000_000 : 2_000_000,
             });
+            hlsInstanceRef.current = hls;
             hls.loadSource(currentUrl);
             hls.attachMedia(video);
-            hls.on(Hls.Events.MANIFEST_PARSED, () => {
+            hls.on(Hls.Events.MANIFEST_PARSED, (_evt: any, data: any) => {
               if (destroyed) return;
               if (savedTimeRef.current > 0) { video.currentTime = savedTimeRef.current; savedTimeRef.current = 0; }
               video.play().catch(() => {});
+              if (data.levels && data.levels.length > 1) {
+                const lvls = data.levels
+                  .map((l: any, i: number) => ({
+                    index: i,
+                    label: l.height ? `${l.height}p` : `${Math.round((l.bitrate || 0) / 1000)}k`,
+                    bitrate: l.bitrate || 0,
+                  }))
+                  .reverse();
+                setQualityLevels(lvls);
+                if (downlinkMbps > 0 && data.levels.length > 1) {
+                  if (downlinkMbps < 1) {
+                    hls.currentLevel = 0; hls.loadLevel = 0; setSelectedQuality(0);
+                  } else if (downlinkMbps < 2.5 && data.levels.length >= 3) {
+                    const mid = Math.floor(data.levels.length / 2);
+                    hls.currentLevel = mid; hls.loadLevel = mid; setSelectedQuality(mid);
+                  }
+                }
+              }
             });
-            hls.on(Hls.Events.ERROR, (_, data) => {
+            hls.on(Hls.Events.FRAG_LOADED, () => {
+              if (!destroyed && hls.bandwidthEstimate) setBandwidth(hls.bandwidthEstimate);
+            });
+            hls.on(Hls.Events.ERROR, (_evt: any, data: any) => {
               if (data.fatal) {
                 setError('No se pudo cargar el stream HLS.');
                 setIsLoading(false);
@@ -277,6 +309,14 @@ export default function VodPlayerPage() {
     };
   }, [currentUrl]);
 
+  const changeQuality = useCallback((levelIndex: number) => {
+    const h = hlsInstanceRef.current;
+    if (h) { h.currentLevel = levelIndex; h.loadLevel = levelIndex; }
+    setSelectedQuality(levelIndex);
+    setShowQualityMenu(false);
+    showControlsTemporarily();
+  }, [showControlsTemporarily]);
+
   const togglePlay = useCallback(() => {
     const v = videoRef.current;
     if (!v) return;
@@ -329,8 +369,12 @@ export default function VodPlayerPage() {
         case 'ArrowDown': e.preventDefault(); { const v = videoRef.current; if (v) v.volume = Math.max(0, v.volume - 0.1); } break;
         case 'f': case 'F': toggleFullscreen(); break;
         case 'm': case 'M': toggleMute(); break;
+        case 'q': case 'Q':
+          if (qualityLevels.length > 1) { e.preventDefault(); setShowQualityMenu(p => !p); showControlsTemporarily(); }
+          break;
         case 'Escape': case 'Backspace':
           e.preventDefault();
+          if (showQualityMenu) { setShowQualityMenu(false); break; }
           if (document.fullscreenElement) document.exitFullscreen();
           else setLocation(backUrl);
           break;
@@ -539,6 +583,49 @@ export default function VodPlayerPage() {
               <span className="text-[10px] text-white/50 w-7 text-right">{Math.round((isMuted ? 0 : volume) * 100)}%</span>
             </div>
 
+            {qualityLevels.length > 1 && (
+              <div className="relative">
+                <button
+                  onClick={() => setShowQualityMenu(p => !p)}
+                  className="flex items-center gap-1.5 px-3 py-2 sm:py-2.5 rounded-full bg-black/40 text-white backdrop-blur hover:bg-black/60 transition-all text-xs font-bold"
+                  title="Calidad de video (Q)"
+                >
+                  <Gauge className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+                  <span>{selectedQuality === -1 ? 'AUTO' : (qualityLevels.find(l => l.index === selectedQuality)?.label ?? 'AUTO')}</span>
+                </button>
+                {showQualityMenu && (
+                  <div className="absolute bottom-full mb-2 left-1/2 -translate-x-1/2 bg-black/95 border border-white/20 rounded-xl overflow-hidden shadow-2xl min-w-[130px] z-50">
+                    <div className="px-3 py-2 border-b border-white/10">
+                      <p className="text-white/50 text-[10px] font-semibold uppercase tracking-wider">Calidad</p>
+                      {bandwidth > 0 && (
+                        <p className="text-white/30 text-[9px] mt-0.5">
+                          {bandwidth < 1_000_000
+                            ? `${Math.round(bandwidth / 1000)} kbps`
+                            : `${(bandwidth / 1_000_000).toFixed(1)} Mbps`}
+                        </p>
+                      )}
+                    </div>
+                    <button
+                      onClick={() => changeQuality(-1)}
+                      className={`w-full px-3 py-2 text-left text-sm flex items-center justify-between gap-3 transition-colors ${selectedQuality === -1 ? 'text-primary font-semibold bg-primary/10' : 'text-white hover:bg-white/10'}`}
+                    >
+                      Auto <span className="text-[10px] text-white/30">ABR</span>
+                    </button>
+                    {qualityLevels.map(lvl => (
+                      <button
+                        key={lvl.index}
+                        onClick={() => changeQuality(lvl.index)}
+                        className={`w-full px-3 py-2 text-left text-sm flex items-center justify-between gap-3 transition-colors ${selectedQuality === lvl.index ? 'text-primary font-semibold bg-primary/10' : 'text-white hover:bg-white/10'}`}
+                      >
+                        {lvl.label}
+                        <span className="text-[10px] text-white/30">{lvl.bitrate < 1_000_000 ? `${Math.round(lvl.bitrate / 1000)}k` : `${(lvl.bitrate / 1_000_000).toFixed(1)}M`}</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
             <button
               onClick={toggleFullscreen}
               className="p-2.5 sm:p-3 rounded-full bg-black/40 text-white backdrop-blur hover:bg-black/60 transition-all"
@@ -550,7 +637,7 @@ export default function VodPlayerPage() {
           </div>
 
           <p className="text-center text-white/25 text-[9px] sm:text-[10px] pb-1">
-            Espacio Reproducir · ◄► ±10s · Shift+◄► ±30s · F Pantalla completa · M Silencio
+            Espacio Reproducir · ◄► ±10s · Shift+◄► ±30s · F Pantalla completa · M Silencio{qualityLevels.length > 1 ? ' · Q Calidad' : ''}
           </p>
         </div>
       </div>

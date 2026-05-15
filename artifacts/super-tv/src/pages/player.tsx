@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useLocation } from 'wouter';
-import { Play, Pause, Volume2, VolumeX, Maximize, Minimize, ArrowLeft, RotateCcw, SkipBack, SkipForward, AlertTriangle, Lock, Minimize2, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Play, Pause, Volume2, VolumeX, Maximize, Minimize, ArrowLeft, RotateCcw, SkipBack, SkipForward, AlertTriangle, Lock, Minimize2, ChevronLeft, ChevronRight, Gauge } from 'lucide-react';
 import logo from '@assets/imagen_1777670460131.png';
 import { useGetMe, getGetMeQueryKey } from '@workspace/api-client-react';
 import { getProgress, saveProgress, addToHistory, saveEpisodeProgress, getEpisodeProgress } from '@/lib/user-data';
@@ -131,6 +131,12 @@ export default function PlayerPage() {
   const [formatLabel, setFormatLabel] = useState('');
   const [showOsd, setShowOsd] = useState(false);
   const osdTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const hlsInstanceRef = useRef<any>(null);
+  const [qualityLevels, setQualityLevels] = useState<Array<{ index: number; label: string; bitrate: number }>>([]);
+  const [selectedQuality, setSelectedQuality] = useState(-1);
+  const [showQualityMenu, setShowQualityMenu] = useState(false);
+  const [bandwidth, setBandwidth] = useState(0);
 
   const volumeRef = useRef(volume);
   volumeRef.current = volume;
@@ -272,6 +278,11 @@ export default function PlayerPage() {
     setIsLoading(true);
     setCurrentTime(0);
     setDuration(0);
+    setQualityLevels([]);
+    setSelectedQuality(-1);
+    setShowQualityMenu(false);
+    setBandwidth(0);
+    hlsInstanceRef.current = null;
 
     if (episodeId && type === 'episode') {
       const epNum = Number(episodeId);
@@ -322,23 +333,19 @@ export default function PlayerPage() {
           const Hls = (await getHls()).default;
           if (Hls.isSupported()) {
             const isChannel = type === 'channel';
+            const conn = (navigator as any).connection || (navigator as any).mozConnection || (navigator as any).webkitConnection;
+            const downlinkMbps: number = conn?.downlink ?? 0;
             const hls = new Hls({
               enableWorker: true,
               lowLatencyMode: isChannel,
-              // For channels: tiny buffer = instant start; for VOD: bigger = smooth
               backBufferLength: isChannel ? 2 : 5,
               maxBufferLength: isChannel ? 4 : 10,
               maxMaxBufferLength: isChannel ? 8 : 20,
               startFragPrefetch: true,
-              // Start at lowest quality immediately for channels (ramps up fast),
-              // auto-select for VOD so we don't waste time on a bad first segment
               startLevel: isChannel ? 0 : -1,
-              // Assume 2Mbps connection so ABR doesn't waste time probing bandwidth
-              abrEwmaDefaultEstimate: 2_000_000,
+              abrEwmaDefaultEstimate: downlinkMbps > 0 ? downlinkMbps * 1_000_000 : 2_000_000,
               progressive: true,
-              // Skip bandwidth test on channels — we want immediate playback
               testBandwidth: !isChannel,
-              // Tight timeouts: fail fast so proxy fallback kicks in quickly
               fragLoadingTimeOut: isChannel ? 2000 : 3000,
               manifestLoadingTimeOut: isChannel ? 2500 : 4000,
               levelLoadingTimeOut: isChannel ? 2500 : 4000,
@@ -347,19 +354,45 @@ export default function PlayerPage() {
               nudgeMaxRetry: 6,
               nudgeOffset: 0.1,
               highBufferWatchdogPeriod: 1,
-              // Skip stall recovery delay for channels — jump immediately
-              stallReported: isChannel ? 0.3 : 1,
             });
+            hlsInstanceRef.current = hls;
             hls.loadSource(currentUrl);
             hls.attachMedia(video);
-            hls.on(Hls.Events.MANIFEST_PARSED, () => {
+            hls.on(Hls.Events.MANIFEST_PARSED, (_evt: any, data: any) => {
               if (!destroyed) {
                 if (savedTimeRef.current > 0) {
                   video.currentTime = savedTimeRef.current;
                   savedTimeRef.current = 0;
                 }
                 video.play().catch(() => {});
+                // Build quality level list (levels come sorted lowest→highest bitrate)
+                if (data.levels && data.levels.length > 1) {
+                  const lvls = data.levels
+                    .map((l: any, i: number) => ({
+                      index: i,
+                      label: l.height ? `${l.height}p` : `${Math.round((l.bitrate || 0) / 1000)}k`,
+                      bitrate: l.bitrate || 0,
+                    }))
+                    .reverse(); // show highest first in menu
+                  setQualityLevels(lvls);
+                  // Auto-pick lower quality on slow connections
+                  if (downlinkMbps > 0 && data.levels.length > 1) {
+                    if (downlinkMbps < 1) {
+                      hls.currentLevel = 0;
+                      hls.loadLevel = 0;
+                      setSelectedQuality(0);
+                    } else if (downlinkMbps < 2.5 && data.levels.length >= 3) {
+                      const mid = Math.floor(data.levels.length / 2);
+                      hls.currentLevel = mid;
+                      hls.loadLevel = mid;
+                      setSelectedQuality(mid);
+                    }
+                  }
+                }
               }
+            });
+            hls.on(Hls.Events.FRAG_LOADED, () => {
+              if (!destroyed && hls.bandwidthEstimate) setBandwidth(hls.bandwidthEstimate);
             });
             hls.on(Hls.Events.ERROR, (_, data) => {
               if (data.fatal) {
@@ -483,6 +516,17 @@ export default function PlayerPage() {
     showControlsTemporarily();
   }, [showControlsTemporarily]);
 
+  const changeQuality = useCallback((levelIndex: number) => {
+    const h = hlsInstanceRef.current;
+    if (h) {
+      h.currentLevel = levelIndex;
+      h.loadLevel = levelIndex;
+    }
+    setSelectedQuality(levelIndex);
+    setShowQualityMenu(false);
+    showControlsTemporarily();
+  }, [showControlsTemporarily]);
+
   const toggleFullscreen = useCallback(() => {
     const el = containerRef.current;
     if (!el) return;
@@ -537,7 +581,7 @@ export default function PlayerPage() {
     goToChannel((channelIndex + 1) % channels.length);
   }, [goToChannel, channelIndex, channels.length]);
 
-  const controls = ['back', ...(hasChannels ? ['prevch'] : []), 'skipback', 'play', 'skipfwd', ...(hasChannels ? ['nextch'] : []), 'mute', 'minimize', 'fullscreen'];
+  const controls = ['back', ...(hasChannels ? ['prevch'] : []), 'skipback', 'play', 'skipfwd', ...(hasChannels ? ['nextch'] : []), 'mute', ...(qualityLevels.length > 1 ? ['quality'] : []), ...(type === 'channel' ? ['minimize'] : []), 'fullscreen'];
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -574,6 +618,7 @@ export default function PlayerPage() {
             case 'skipfwd': skip(10); break;
             case 'nextch': goNextChannel(); break;
             case 'mute': toggleMute(); break;
+            case 'quality': setShowQualityMenu(p => !p); break;
             case 'minimize': handleMinimize(); break;
             case 'fullscreen': toggleFullscreen(); break;
           }
@@ -581,6 +626,7 @@ export default function PlayerPage() {
         case 'Escape':
         case 'Backspace':
           e.preventDefault();
+          if (showQualityMenu) { setShowQualityMenu(false); break; }
           if (document.fullscreenElement) { document.exitFullscreen(); }
           else handleMinimize();
           break;
@@ -597,6 +643,10 @@ export default function PlayerPage() {
         case 'M':
           e.preventDefault();
           toggleMute();
+          break;
+        case 'q':
+        case 'Q':
+          if (qualityLevels.length > 1) { e.preventDefault(); setShowQualityMenu(p => !p); }
           break;
       }
     };
@@ -826,6 +876,49 @@ export default function PlayerPage() {
               />
               <span className="text-[10px] text-white/50 w-7 text-right">{Math.round((isMuted ? 0 : volume) * 100)}%</span>
             </div>
+
+            {qualityLevels.length > 1 && (
+              <div className="relative">
+                <button
+                  onClick={() => setShowQualityMenu(p => !p)}
+                  className={`flex items-center gap-1.5 px-3 py-2 sm:py-2.5 rounded-full bg-black/40 text-white backdrop-blur transition-all text-xs font-bold ${ctrlIndex === controls.indexOf('quality') ? 'ring-2 ring-primary scale-110 bg-black/60' : 'hover:bg-black/60'}`}
+                  title="Calidad de video (Q)"
+                >
+                  <Gauge className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+                  <span>{selectedQuality === -1 ? 'AUTO' : (qualityLevels.find(l => l.index === selectedQuality)?.label ?? 'AUTO')}</span>
+                </button>
+                {showQualityMenu && (
+                  <div className="absolute bottom-full mb-2 left-1/2 -translate-x-1/2 bg-black/95 border border-white/20 rounded-xl overflow-hidden shadow-2xl min-w-[130px] z-50">
+                    <div className="px-3 py-2 border-b border-white/10">
+                      <p className="text-white/50 text-[10px] font-semibold uppercase tracking-wider">Calidad</p>
+                      {bandwidth > 0 && (
+                        <p className="text-white/30 text-[9px] mt-0.5">
+                          {bandwidth < 1_000_000
+                            ? `${Math.round(bandwidth / 1000)} kbps`
+                            : `${(bandwidth / 1_000_000).toFixed(1)} Mbps`}
+                        </p>
+                      )}
+                    </div>
+                    <button
+                      onClick={() => changeQuality(-1)}
+                      className={`w-full px-3 py-2 text-left text-sm flex items-center justify-between gap-3 transition-colors ${selectedQuality === -1 ? 'text-primary font-semibold bg-primary/10' : 'text-white hover:bg-white/10'}`}
+                    >
+                      Auto <span className="text-[10px] text-white/30">ABR</span>
+                    </button>
+                    {qualityLevels.map(lvl => (
+                      <button
+                        key={lvl.index}
+                        onClick={() => changeQuality(lvl.index)}
+                        className={`w-full px-3 py-2 text-left text-sm flex items-center justify-between gap-3 transition-colors ${selectedQuality === lvl.index ? 'text-primary font-semibold bg-primary/10' : 'text-white hover:bg-white/10'}`}
+                      >
+                        {lvl.label}
+                        <span className="text-[10px] text-white/30">{lvl.bitrate < 1_000_000 ? `${Math.round(lvl.bitrate / 1000)}k` : `${(lvl.bitrate / 1_000_000).toFixed(1)}M`}</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
 
             {type === 'channel' && (
               <button
