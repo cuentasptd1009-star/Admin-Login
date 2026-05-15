@@ -1,0 +1,90 @@
+name: Deploy to Cloudflare Pages
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build Super TV
+        run: pnpm --filter @workspace/super-tv... run build
+
+      - name: Deploy to Cloudflare Pages
+        env:
+          CF_API_KEY: ${{ secrets.CLOUDFLARE_GLOBAL_KEY }}
+          CF_EMAIL: ${{ secrets.CLOUDFLARE_EMAIL }}
+          CF_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          python3 << 'PYEOF'
+          import os, hashlib, json, urllib.request, urllib.error
+          from pathlib import Path
+
+          ACCOUNT_ID = os.environ["CF_ACCOUNT_ID"]
+          PROJECT    = "super-tv"
+          API_KEY    = os.environ["CF_API_KEY"]
+          EMAIL      = os.environ["CF_EMAIL"]
+          DIST       = Path("artifacts/super-tv/dist/public")
+
+          files = {}
+          for p in DIST.rglob("*"):
+              if p.is_file() and not p.name.endswith(".map"):
+                  rel     = str(p.relative_to(DIST))
+                  content = p.read_bytes()
+                  sha     = hashlib.sha256(content).hexdigest()
+                  files[rel] = (sha, content)
+
+          print(f"Uploading {len(files)} files to Cloudflare Pages...")
+          boundary   = "----CFPagesBoundary777"
+          body_parts = []
+          manifest   = {f"/{k}": v[0] for k, v in files.items()}
+          body_parts.append(
+              f"--{boundary}\r\nContent-Disposition: form-data; name=\"manifest\"\r\n\r\n".encode()
+              + json.dumps(manifest).encode()
+          )
+          for rel, (sha, content) in files.items():
+              body_parts.append(
+                  f"--{boundary}\r\nContent-Disposition: form-data; name=\"/{rel}\"; filename=\"/{rel}\"\r\n\r\n".encode()
+                  + content
+              )
+          body = b"\r\n".join(body_parts) + f"\r\n--{boundary}--\r\n".encode()
+
+          url = f"https://api.cloudflare.com/client/v4/accounts/{ACCOUNT_ID}/pages/projects/{PROJECT}/deployments"
+          req = urllib.request.Request(url, data=body, method="POST")
+          req.add_header("X-Auth-Key",   API_KEY)
+          req.add_header("X-Auth-Email", EMAIL)
+          req.add_header("Content-Type", f"multipart/form-data; boundary={boundary}")
+
+          try:
+              with urllib.request.urlopen(req, timeout=300) as resp:
+                  result = json.loads(resp.read())
+                  if result.get("success"):
+                      r = result["result"]
+                      print(f"✅ Deployed successfully!")
+                      print(f"   URL: {r.get('url')}")
+                      print(f"   ID:  {r.get('id')}")
+                  else:
+                      print(f"❌ Deploy failed: {result.get('errors')}")
+                      exit(1)
+          except urllib.error.HTTPError as e:
+              print(f"❌ HTTP {e.code}: {e.read().decode()[:500]}")
+              exit(1)
+          PYEOF

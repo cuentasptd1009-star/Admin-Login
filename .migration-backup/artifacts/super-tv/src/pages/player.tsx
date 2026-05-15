@@ -1,0 +1,821 @@
+import { useState, useEffect, useRef, useCallback } from 'react';
+import { useLocation } from 'wouter';
+import { Play, Pause, Volume2, VolumeX, Maximize, Minimize, ArrowLeft, RotateCcw, SkipBack, SkipForward, AlertTriangle, Lock, Minimize2, ChevronLeft, ChevronRight } from 'lucide-react';
+import logo from '@assets/imagen_1777670460131.png';
+import { useGetMe, getGetMeQueryKey } from '@workspace/api-client-react';
+import { getProgress, saveProgress, addToHistory, saveEpisodeProgress, getEpisodeProgress } from '@/lib/user-data';
+import { getMiniPlayerState, setMiniPlayerState, updateMiniPlayerState } from '@/lib/mini-player-state';
+import { getToken } from '@/lib/auth';
+
+type VideoFormat = 'hls' | 'dash' | 'flv' | 'native';
+
+// Preload hls.js as soon as this module loads so it's cached when first needed
+let _hlsPromise: Promise<typeof import('hls.js')> | null = null;
+function getHls() {
+  if (!_hlsPromise) _hlsPromise = import('hls.js');
+  return _hlsPromise;
+}
+
+function detectFormat(url: string): VideoFormat {
+  const clean = url.toLowerCase().split('?')[0].split('#')[0];
+  if (clean.endsWith('.m3u8') || clean.includes('/hls/') || clean.includes('manifest.m3u8') || clean.includes('.m3u8')) return 'hls';
+  if (clean.endsWith('.mpd') || clean.includes('/dash/')) return 'dash';
+  if (clean.endsWith('.flv')) return 'flv';
+  return 'native';
+}
+
+function formatTime(s: number): string {
+  if (!isFinite(s) || s < 0) return '0:00';
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const sec = Math.floor(s % 60);
+  if (h > 0) return `${h}:${String(m).padStart(2, '0')}:${String(sec).padStart(2, '0')}`;
+  return `${m}:${String(sec).padStart(2, '0')}`;
+}
+
+export default function PlayerPage() {
+  const [, setLocation] = useLocation();
+  const { data: session } = useGetMe({ query: { queryKey: getGetMeQueryKey(), retry: false } });
+  const daysLeft = (() => {
+    if (!session?.expiresAt) return null;
+    return Math.ceil((new Date(session.expiresAt).getTime() - Date.now()) / (1000 * 60 * 60 * 24));
+  })();
+  const isExpired = session?.type === 'user' && daysLeft !== null && daysLeft <= 0;
+
+  const searchParams = new URLSearchParams(window.location.search);
+  const channelId = searchParams.get('channelId') || '';
+  const miniState = getMiniPlayerState();
+  const rawUrl = searchParams.get('url') || (channelId && miniState?.url ? miniState.url : '');
+  const title = searchParams.get('title') || 'Reproduciendo';
+  const type = searchParams.get('type') || 'channel';
+  const movieId = searchParams.get('movieId');
+  const category = searchParams.get('category');
+  const startFrom = searchParams.get('startFrom');
+  const episodeId = searchParams.get('episodeId');
+  const seriesId = searchParams.get('seriesId');
+  const seasonId = searchParams.get('seasonId');
+  const seasonNumber = searchParams.get('seasonNumber');
+  const episodeNumber = searchParams.get('episodeNumber');
+  const seriesTitle = searchParams.get('seriesTitle');
+  const nextEpisodeId = searchParams.get('nextEpisodeId');
+  const nextSeasonId = searchParams.get('nextSeasonId');
+  const nextEpisodeTitle = searchParams.get('nextEpisodeTitle');
+
+  const backUrl = episodeId && seriesId ? `/serie/${seriesId}` : movieId ? `/pelicula/${movieId}` : type === 'movie' ? '/home?tab=movies' : type === 'episode' ? '/home?tab=series' : '/home';
+
+  const channels = miniState?.channels ?? [];
+  const channelIndex = miniState?.channelIndex ?? 0;
+  const hasChannels = type === 'channel' && channels.length > 1;
+
+  const authToken = getToken('user') || getToken('admin') || '';
+
+  function buildChannelUrl(chId: string | number, fmt: string): string {
+    if (fmt === 'hls') {
+      return `/api/channels/${chId}/hls-proxy?token=${encodeURIComponent(authToken)}`;
+    }
+    return `/api/channels/${chId}/stream?token=${encodeURIComponent(authToken)}`;
+  }
+
+  const initialFormat = miniState?.streamFormat || (rawUrl ? detectFormat(rawUrl) : 'native');
+  const initialUrl = (type === 'channel' && channelId)
+    ? buildChannelUrl(channelId, initialFormat)
+    : rawUrl;
+
+  const [currentUrl, setCurrentUrl] = useState(initialUrl || rawUrl);
+  const [currentFormat, setCurrentFormat] = useState(initialFormat);
+
+  useEffect(() => {
+    if (!initialUrl && !rawUrl && channelId) {
+      fetch(`/api/channels/${channelId}`, {
+        headers: authToken ? { Authorization: `Bearer ${authToken}` } : {},
+      })
+        .then(r => r.json())
+        .then(ch => {
+          const fmt = ch.streamFormat || detectFormat(ch.streamUrl || '');
+          setCurrentFormat(fmt);
+          setCurrentUrl(buildChannelUrl(channelId, fmt));
+        })
+        .catch(() => {});
+    }
+  }, []);
+  const [currentTitle, setCurrentTitle] = useState(title);
+
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const progressRef = useRef<HTMLDivElement>(null);
+  const controlsTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const cleanupRef = useRef<(() => void) | null>(null);
+  const savedTimeRef = useRef(0);
+  const lastSaveRef = useRef(0);
+  const movieNumIdRef = useRef<number | null>(null);
+  const episodeNumIdRef = useRef<{ episodeId: number; seriesId: number; seasonId: number; seasonNumber: number; episodeNumber: number; title: string } | null>(null);
+
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [isMuted, setIsMuted] = useState(false);
+  const [volume, setVolume] = useState(1);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const [showControls, setShowControls] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [isBuffering, setIsBuffering] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
+  const [currentTime, setCurrentTime] = useState(0);
+  const [duration, setDuration] = useState(0);
+  const [ctrlIndex, setCtrlIndex] = useState(1);
+  const [formatLabel, setFormatLabel] = useState('');
+  const [showOsd, setShowOsd] = useState(false);
+  const osdTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const volumeRef = useRef(volume);
+  volumeRef.current = volume;
+  const mutedRef = useRef(isMuted);
+  mutedRef.current = isMuted;
+  const playingRef = useRef(isPlaying);
+  playingRef.current = isPlaying;
+  const currentFormatRef = useRef(currentFormat);
+  currentFormatRef.current = currentFormat;
+  const currentUrlRef = useRef(currentUrl);
+  currentUrlRef.current = currentUrl;
+  const retryCountRef = useRef(0);
+
+  const showControlsTemporarily = useCallback(() => {
+    setShowControls(true);
+    if (controlsTimeoutRef.current) clearTimeout(controlsTimeoutRef.current);
+    controlsTimeoutRef.current = setTimeout(() => setShowControls(false), 4000);
+  }, []);
+
+  const setupVideoEvents = useCallback((video: HTMLVideoElement) => {
+    const onPlay = () => { setIsPlaying(true); setIsLoading(false); };
+    const onPause = () => setIsPlaying(false);
+    const onWaiting = () => setIsBuffering(true);
+    const onCanPlay = () => { setIsBuffering(false); setIsLoading(false); };
+    const onTimeUpdate = () => {
+      const t = video.currentTime;
+      setCurrentTime(t);
+      const now = Date.now();
+      if (now - lastSaveRef.current > 5000) {
+        lastSaveRef.current = now;
+        if (movieNumIdRef.current) {
+          saveProgress(movieNumIdRef.current, t, video.duration || 0);
+        }
+        if (episodeNumIdRef.current) {
+          saveEpisodeProgress(
+            episodeNumIdRef.current.seriesId,
+            episodeNumIdRef.current.seasonId,
+            episodeNumIdRef.current.seasonNumber,
+            episodeNumIdRef.current.episodeId,
+            episodeNumIdRef.current.episodeNumber,
+            t,
+            video.duration || 0,
+            episodeNumIdRef.current.title,
+          );
+        }
+      }
+    };
+    const onDurationChange = () => { if (isFinite(video.duration)) setDuration(video.duration); };
+    const onLoadedMetadata = () => {
+      if (savedTimeRef.current > 0) {
+        video.currentTime = savedTimeRef.current;
+        savedTimeRef.current = 0;
+      }
+    };
+    const onLoadedData = () => setIsLoading(false);
+    const onVolumeChange = () => { setVolume(video.volume); setIsMuted(video.muted); };
+    const onError = () => {
+      const err = video.error;
+      // Auto-retry with HLS proxy for channels whose URLs don't expose .m3u8
+      // but are actually HLS streams (e.g. ESPN 3, many Latin IPTV providers)
+      if (
+        err?.code === 4 &&
+        currentFormatRef.current === 'native' &&
+        type === 'channel' &&
+        retryCountRef.current === 0
+      ) {
+        const urlMatch = currentUrlRef.current.match(/\/channels\/(\d+)\/stream/);
+        if (urlMatch) {
+          retryCountRef.current = 1;
+          const token = getToken('user') || getToken('admin') || '';
+          const hlsUrl = `/api/channels/${urlMatch[1]}/hls-proxy?token=${encodeURIComponent(token)}`;
+          setCurrentFormat('hls');
+          setCurrentUrl(hlsUrl);
+          return;
+        }
+      }
+      let msg = 'No se pudo reproducir el video.';
+      if (err) {
+        if (err.code === 4) msg = 'Formato no soportado. El canal puede no ser compatible con este navegador.';
+        else if (err.code === 3) msg = 'Error al decodificar el video. El canal puede estar sin señal.';
+        else if (err.code === 2) msg = 'Error de red al cargar el canal. Comprueba tu conexión.';
+      }
+      setError(msg);
+      setIsLoading(false);
+    };
+
+    video.addEventListener('play', onPlay);
+    video.addEventListener('pause', onPause);
+    video.addEventListener('waiting', onWaiting);
+    video.addEventListener('canplay', onCanPlay);
+    video.addEventListener('timeupdate', onTimeUpdate);
+    video.addEventListener('durationchange', onDurationChange);
+    video.addEventListener('loadedmetadata', onLoadedMetadata);
+    video.addEventListener('loadeddata', onLoadedData);
+    video.addEventListener('volumechange', onVolumeChange);
+    video.addEventListener('error', onError);
+
+    return () => {
+      video.removeEventListener('play', onPlay);
+      video.removeEventListener('pause', onPause);
+      video.removeEventListener('waiting', onWaiting);
+      video.removeEventListener('canplay', onCanPlay);
+      video.removeEventListener('timeupdate', onTimeUpdate);
+      video.removeEventListener('durationchange', onDurationChange);
+      video.removeEventListener('loadedmetadata', onLoadedMetadata);
+      video.removeEventListener('loadeddata', onLoadedData);
+      video.removeEventListener('volumechange', onVolumeChange);
+      video.removeEventListener('error', onError);
+    };
+  }, []);
+
+  useEffect(() => {
+    retryCountRef.current = 0;
+    if (!currentUrl) { setLocation(backUrl); return; }
+    const video = videoRef.current;
+    if (!video) return;
+
+    setError(null);
+    setIsLoading(true);
+    setCurrentTime(0);
+    setDuration(0);
+
+    if (episodeId && type === 'episode') {
+      const epNum = Number(episodeId);
+      let seekTo = 0;
+      if (startFrom !== null) {
+        seekTo = Number(startFrom) > 10 ? Number(startFrom) : 0;
+      } else {
+        const prog = getEpisodeProgress(epNum);
+        seekTo = prog && prog.time > 10 ? prog.time : 0;
+      }
+      savedTimeRef.current = seekTo;
+      movieNumIdRef.current = null;
+      episodeNumIdRef.current = {
+        episodeId: epNum,
+        seriesId: Number(seriesId) || 0,
+        seasonId: Number(seasonId) || 0,
+        seasonNumber: Number(seasonNumber) || 1,
+        episodeNumber: Number(episodeNumber) || 1,
+        title: title,
+      };
+    } else if (movieId && type === 'movie') {
+      let seekTo = 0;
+      if (startFrom !== null) {
+        seekTo = Number(startFrom) > 10 ? Number(startFrom) : 0;
+      } else {
+        const prog = getProgress(Number(movieId));
+        seekTo = prog && prog.time > 10 ? prog.time : 0;
+      }
+      savedTimeRef.current = seekTo;
+      movieNumIdRef.current = Number(movieId);
+      episodeNumIdRef.current = null;
+      addToHistory(Number(movieId), category || null);
+    } else {
+      savedTimeRef.current = 0;
+      movieNumIdRef.current = null;
+      episodeNumIdRef.current = null;
+    }
+
+    const removeEvents = setupVideoEvents(video);
+    const fmt = type === 'channel' ? currentFormat : detectFormat(currentUrl);
+    setFormatLabel(fmt.toUpperCase());
+
+    let destroyed = false;
+
+    const init = async () => {
+      try {
+        if (fmt === 'hls') {
+          const Hls = (await getHls()).default;
+          if (Hls.isSupported()) {
+            const hls = new Hls({
+              enableWorker: true,
+              lowLatencyMode: true,
+              backBufferLength: 3,
+              maxBufferLength: 8,
+              maxMaxBufferLength: 15,
+              startFragPrefetch: true,
+              startLevel: -1,
+              abrEwmaDefaultEstimate: 500_000,
+              progressive: true,
+              testBandwidth: true,
+              fragLoadingTimeOut: 3000,
+              manifestLoadingTimeOut: 5000,
+              levelLoadingTimeOut: 5000,
+              fragLoadingMaxRetry: 5,
+              manifestLoadingMaxRetry: 5,
+              nudgeMaxRetry: 10,
+              highBufferWatchdogPeriod: 1,
+            });
+            hls.loadSource(currentUrl);
+            hls.attachMedia(video);
+            hls.on(Hls.Events.MANIFEST_PARSED, () => {
+              if (!destroyed) {
+                if (savedTimeRef.current > 0) {
+                  video.currentTime = savedTimeRef.current;
+                  savedTimeRef.current = 0;
+                }
+                video.play().catch(() => {});
+              }
+            });
+            hls.on(Hls.Events.ERROR, (_, data) => {
+              if (data.fatal) {
+                if (data.type === Hls.ErrorTypes.NETWORK_ERROR && retryCountRef.current === 0 && type === 'channel' && channelId) {
+                  // Direct stream failed (CORS or network) — fall back to server proxy
+                  retryCountRef.current = 1;
+                  cleanupRef.current = null;
+                  hls.destroy();
+                  const t = getToken('user') || getToken('admin') || '';
+                  setCurrentUrl(`/api/channels/${channelId}/hls-proxy?token=${encodeURIComponent(t)}`);
+                } else if (data.type === Hls.ErrorTypes.NETWORK_ERROR) {
+                  hls.startLoad();
+                } else if (data.type === Hls.ErrorTypes.MEDIA_ERROR) {
+                  hls.recoverMediaError();
+                } else {
+                  setError('No se pudo cargar el stream. El canal puede estar sin señal.');
+                  setIsLoading(false);
+                }
+              }
+            });
+            cleanupRef.current = () => hls.destroy();
+          } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
+            video.src = currentUrl;
+            video.play().catch(() => {});
+          } else {
+            setError('Tu navegador no soporta este formato de video.');
+            setIsLoading(false);
+          }
+        } else if (fmt === 'dash') {
+          const dashjs = await import('dashjs');
+          const player = dashjs.MediaPlayer().create();
+          player.initialize(video, currentUrl, true);
+          player.updateSettings({
+            streaming: {
+              buffer: { fastSwitchEnabled: true },
+              abr: { autoSwitchBitrate: { video: true, audio: true } },
+            },
+          });
+          cleanupRef.current = () => player.destroy();
+        } else if (fmt === 'flv') {
+          const flvjs = (await import('flv.js')).default;
+          if (flvjs.isSupported()) {
+            const flvPlayer = flvjs.createPlayer({
+              type: 'flv',
+              url: currentUrl,
+              isLive: type === 'channel',
+            });
+            flvPlayer.attachMediaElement(video);
+            flvPlayer.load();
+            flvPlayer.play();
+            flvPlayer.on(flvjs.Events.ERROR, () => {
+              setError('Error al reproducir FLV. El archivo puede no ser compatible.');
+              setIsLoading(false);
+            });
+            cleanupRef.current = () => flvPlayer.destroy();
+          } else {
+            setError('Tu navegador no soporta FLV nativo.');
+            setIsLoading(false);
+          }
+        } else {
+          video.src = currentUrl;
+          video.load();
+          video.play().catch(() => {});
+        }
+      } catch (e) {
+        if (!destroyed) {
+          setError('No se pudo inicializar el reproductor.');
+          setIsLoading(false);
+        }
+      }
+    };
+
+    init();
+
+    return () => {
+      destroyed = true;
+      if (movieNumIdRef.current && video.currentTime > 0) {
+        saveProgress(movieNumIdRef.current, video.currentTime, video.duration || 0);
+      }
+      removeEvents();
+      if (cleanupRef.current) { cleanupRef.current(); cleanupRef.current = null; }
+      video.src = '';
+      video.load();
+    };
+  }, [currentUrl]);
+
+  const togglePlay = useCallback(() => {
+    const v = videoRef.current;
+    if (!v) return;
+    if (playingRef.current) v.pause(); else v.play().catch(() => {});
+    showControlsTemporarily();
+  }, [showControlsTemporarily]);
+
+  const toggleMute = useCallback(() => {
+    const v = videoRef.current;
+    if (!v) return;
+    v.muted = !mutedRef.current;
+    showControlsTemporarily();
+  }, [showControlsTemporarily]);
+
+  const handleVolumeChange = useCallback((val: number) => {
+    const v = videoRef.current;
+    const newVol = Math.min(1, Math.max(0, val));
+    if (v) { v.volume = newVol; v.muted = newVol === 0; }
+    showControlsTemporarily();
+  }, [showControlsTemporarily]);
+
+  const handleSeek = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
+    const v = videoRef.current;
+    if (!v || !isFinite(v.duration)) return;
+    const rect = e.currentTarget.getBoundingClientRect();
+    const pct = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+    v.currentTime = pct * v.duration;
+    showControlsTemporarily();
+  }, [showControlsTemporarily]);
+
+  const skip = useCallback((secs: number) => {
+    const v = videoRef.current;
+    if (!v) return;
+    v.currentTime = Math.max(0, Math.min(v.duration || 0, v.currentTime + secs));
+    showControlsTemporarily();
+  }, [showControlsTemporarily]);
+
+  const toggleFullscreen = useCallback(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    if (!document.fullscreenElement) {
+      el.requestFullscreen().catch(() => {});
+    } else {
+      document.exitFullscreen();
+    }
+    showControlsTemporarily();
+  }, [showControlsTemporarily]);
+
+  useEffect(() => {
+    const onFsChange = () => setIsFullscreen(!!document.fullscreenElement);
+    document.addEventListener('fullscreenchange', onFsChange);
+    return () => document.removeEventListener('fullscreenchange', onFsChange);
+  }, []);
+
+  const handleMinimize = useCallback(() => {
+    if (type === 'channel' && currentUrl) {
+      updateMiniPlayerState({ isMinimized: true, url: currentUrl, title: currentTitle });
+      setLocation(backUrl);
+    } else {
+      setLocation(backUrl);
+    }
+  }, [type, currentUrl, currentTitle, backUrl, setLocation]);
+
+  const showOsdBriefly = useCallback(() => {
+    setShowOsd(true);
+    if (osdTimeoutRef.current) clearTimeout(osdTimeoutRef.current);
+    osdTimeoutRef.current = setTimeout(() => setShowOsd(false), 2800);
+  }, []);
+
+  const goToChannel = useCallback((newIdx: number) => {
+    if (!hasChannels) return;
+    const ch = channels[newIdx];
+    if (!ch) return;
+    const fmt = detectFormat(ch.streamUrl || '');
+    const proxyUrl = buildChannelUrl(ch.id, fmt);
+    updateMiniPlayerState({ channelIndex: newIdx, url: proxyUrl, title: ch.name, streamFormat: fmt });
+    setCurrentFormat(fmt);
+    setCurrentUrl(proxyUrl);
+    setCurrentTitle(ch.name);
+    showControlsTemporarily();
+    showOsdBriefly();
+  }, [hasChannels, channels, showControlsTemporarily, showOsdBriefly, authToken]);
+
+  const goPrevChannel = useCallback(() => {
+    goToChannel((channelIndex - 1 + channels.length) % channels.length);
+  }, [goToChannel, channelIndex, channels.length]);
+
+  const goNextChannel = useCallback(() => {
+    goToChannel((channelIndex + 1) % channels.length);
+  }, [goToChannel, channelIndex, channels.length]);
+
+  const controls = ['back', ...(hasChannels ? ['prevch'] : []), 'skipback', 'play', 'skipfwd', ...(hasChannels ? ['nextch'] : []), 'mute', 'minimize', 'fullscreen'];
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      switch (e.key) {
+        case 'ArrowRight':
+          e.preventDefault();
+          if (e.shiftKey) { skip(30); }
+          else setCtrlIndex(p => Math.min(p + 1, controls.length - 1));
+          showControlsTemporarily();
+          break;
+        case 'ArrowLeft':
+          e.preventDefault();
+          if (e.shiftKey) { skip(-30); }
+          else setCtrlIndex(p => Math.max(p - 1, 0));
+          showControlsTemporarily();
+          break;
+        case 'ArrowUp':
+          e.preventDefault();
+          if (hasChannels) goNextChannel();
+          else handleVolumeChange(volumeRef.current + 0.1);
+          break;
+        case 'ArrowDown':
+          e.preventDefault();
+          if (hasChannels) goPrevChannel();
+          else handleVolumeChange(volumeRef.current - 0.1);
+          break;
+        case 'Enter':
+          e.preventDefault();
+          switch (controls[ctrlIndex]) {
+            case 'back': setLocation(backUrl); break;
+            case 'prevch': goPrevChannel(); break;
+            case 'skipback': skip(-10); break;
+            case 'play': togglePlay(); break;
+            case 'skipfwd': skip(10); break;
+            case 'nextch': goNextChannel(); break;
+            case 'mute': toggleMute(); break;
+            case 'minimize': handleMinimize(); break;
+            case 'fullscreen': toggleFullscreen(); break;
+          }
+          break;
+        case 'Escape':
+        case 'Backspace':
+          e.preventDefault();
+          if (document.fullscreenElement) { document.exitFullscreen(); }
+          else handleMinimize();
+          break;
+        case ' ':
+          e.preventDefault();
+          togglePlay();
+          break;
+        case 'f':
+        case 'F':
+          e.preventDefault();
+          toggleFullscreen();
+          break;
+        case 'm':
+        case 'M':
+          e.preventDefault();
+          toggleMute();
+          break;
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [ctrlIndex, backUrl, togglePlay, toggleMute, toggleFullscreen, skip, handleVolumeChange, showControlsTemporarily, hasChannels, goPrevChannel, goNextChannel, handleMinimize, controls]);
+
+  useEffect(() => {
+    showControlsTemporarily();
+    return () => { if (controlsTimeoutRef.current) clearTimeout(controlsTimeoutRef.current); };
+  }, []);
+
+  const isLive = type === 'channel' || !isFinite(duration) || duration === 0;
+  const progress = duration > 0 ? (currentTime / duration) * 100 : 0;
+
+  if (isExpired) {
+    return (
+      <div className="w-full h-screen bg-black flex flex-col items-center justify-center gap-6 text-center px-6">
+        <div className="w-20 h-20 rounded-full bg-destructive/20 flex items-center justify-center">
+          <Lock className="w-10 h-10 text-destructive" />
+        </div>
+        <div className="space-y-2">
+          <h2 className="text-2xl font-bold text-white">Acceso vencido</h2>
+          <p className="text-white/60 max-w-xs">Tu código venció. Para renovarlo, contacta a tu proveedor para activarlo.</p>
+        </div>
+        <button onClick={() => setLocation('/home')} className="text-sm text-white/50 hover:text-white transition-colors underline underline-offset-4">
+          Volver al inicio
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div
+      ref={containerRef}
+      className="relative w-full h-screen bg-black overflow-hidden flex items-center justify-center select-none"
+      onMouseMove={showControlsTemporarily}
+      onTouchStart={showControlsTemporarily}
+      onClick={e => { if (e.target === containerRef.current || e.target === videoRef.current) togglePlay(); showControlsTemporarily(); }}
+    >
+      <video
+        ref={videoRef}
+        className={`w-full h-full object-contain ${error ? 'hidden' : ''}`}
+        playsInline
+        webkit-playsinline=""
+        x-webkit-airplay="allow"
+      />
+
+      {isLoading && !error && (
+        <div className="absolute inset-0 flex items-center justify-center z-20 pointer-events-none bg-black/60">
+          <div className="flex flex-col items-center gap-4">
+            <img src={logo} alt="Super TV" className="w-32 sm:w-40 h-auto drop-shadow-2xl" />
+            <div className="relative w-14 h-14">
+              <svg className="w-14 h-14 animate-spin" viewBox="0 0 56 56" fill="none">
+                <circle cx="28" cy="28" r="24" stroke="white" strokeWidth="4" strokeOpacity="0.15" />
+                <path d="M28 4 A24 24 0 0 1 52 28" stroke="url(#spinner-grad)" strokeWidth="4" strokeLinecap="round" />
+                <defs>
+                  <linearGradient id="spinner-grad" x1="28" y1="4" x2="52" y2="28" gradientUnits="userSpaceOnUse">
+                    <stop offset="0%" stopColor="#ef4444" />
+                    <stop offset="50%" stopColor="#3b82f6" />
+                    <stop offset="100%" stopColor="#ffffff" />
+                  </linearGradient>
+                </defs>
+              </svg>
+            </div>
+            <span className="text-white/70 text-sm tracking-wide">Cargando…</span>
+          </div>
+        </div>
+      )}
+
+      {isBuffering && !isLoading && !error && (
+        <div className="absolute inset-0 flex items-center justify-center z-20 pointer-events-none">
+          <div className="relative w-10 h-10">
+            <svg className="w-10 h-10 animate-spin" viewBox="0 0 40 40" fill="none">
+              <circle cx="20" cy="20" r="16" stroke="white" strokeWidth="3" strokeOpacity="0.15" />
+              <path d="M20 4 A16 16 0 0 1 36 20" stroke="url(#buf-grad)" strokeWidth="3" strokeLinecap="round" />
+              <defs>
+                <linearGradient id="buf-grad" x1="20" y1="4" x2="36" y2="20" gradientUnits="userSpaceOnUse">
+                  <stop offset="0%" stopColor="#ef4444" />
+                  <stop offset="50%" stopColor="#3b82f6" />
+                  <stop offset="100%" stopColor="#ffffff" />
+                </linearGradient>
+              </defs>
+            </svg>
+          </div>
+        </div>
+      )}
+
+      {hasChannels && (
+        <div
+          className={`absolute top-1/2 right-6 sm:right-10 -translate-y-1/2 z-30 pointer-events-none transition-all duration-300 ${showOsd ? 'opacity-100 translate-x-0' : 'opacity-0 translate-x-6'}`}
+        >
+          <div className="bg-black/80 backdrop-blur border border-white/15 rounded-2xl px-5 py-4 shadow-2xl flex flex-col items-end gap-1 min-w-[180px]">
+            <span className="text-white/40 text-[10px] font-semibold uppercase tracking-[0.2em]">Canal</span>
+            <span className="text-primary text-4xl font-black tabular-nums leading-none">{String(channelIndex + 1).padStart(2, '0')}</span>
+            <span className="text-white text-sm font-semibold text-right leading-snug max-w-[160px] truncate">{currentTitle}</span>
+            <div className="mt-1 flex items-center gap-1.5">
+              <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse" />
+              <span className="text-red-400 text-[9px] font-bold uppercase tracking-widest">En Vivo</span>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {error && (
+        <div className="absolute inset-0 flex flex-col items-center justify-center z-20 text-center p-6 gap-4">
+          <AlertTriangle className="w-14 h-14 text-destructive" />
+          <p className="text-white text-lg font-medium max-w-sm">{error}</p>
+          <div className="flex gap-3">
+            <button
+              onClick={() => { setError(null); setIsLoading(true); const v = videoRef.current; if (v) { v.load(); v.play().catch(() => {}); } }}
+              className="flex items-center gap-2 px-5 py-2.5 bg-primary text-white rounded-lg text-sm hover:bg-primary/90 transition-colors"
+            >
+              <RotateCcw className="w-4 h-4" /> Reintentar
+            </button>
+            <button onClick={() => setLocation(backUrl)} className="px-5 py-2.5 bg-white/10 text-white rounded-lg text-sm hover:bg-white/20 transition-colors">
+              Volver
+            </button>
+          </div>
+        </div>
+      )}
+
+      <div className={`absolute inset-0 flex flex-col justify-between transition-opacity duration-300 z-10 ${showControls ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}>
+        <div className="bg-gradient-to-b from-black/80 to-transparent px-4 pt-4 pb-8">
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => setLocation(backUrl)}
+              className={`p-2.5 rounded-full bg-black/40 text-white backdrop-blur transition-all flex-shrink-0 ${ctrlIndex === controls.indexOf('back') ? 'ring-2 ring-primary scale-110' : 'hover:bg-black/60'}`}
+            >
+              <ArrowLeft className="w-5 h-5 sm:w-6 sm:h-6" />
+            </button>
+            <div className="min-w-0 flex-1">
+              <h2 className="text-sm sm:text-lg font-semibold text-white truncate drop-shadow">{currentTitle}</h2>
+              <div className="flex items-center gap-2 mt-0.5">
+                {isLive && <span className="px-2 py-0.5 bg-red-600 text-white text-[9px] sm:text-[10px] rounded uppercase tracking-wider font-bold">● EN VIVO</span>}
+                <span className="text-white/40 text-[9px] sm:text-[10px] uppercase tracking-wide">{formatLabel}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div className="bg-gradient-to-t from-black/90 to-transparent px-4 pb-4 sm:pb-6 space-y-3">
+          {!isLive && duration > 0 && (
+            <div className="space-y-1">
+              <div
+                ref={progressRef}
+                className="w-full h-1.5 bg-white/20 rounded-full cursor-pointer group relative"
+                onClick={handleSeek}
+              >
+                <div
+                  className="h-full bg-primary rounded-full relative transition-all"
+                  style={{ width: `${progress}%` }}
+                >
+                  <div className="absolute right-0 top-1/2 -translate-y-1/2 w-3 h-3 bg-white rounded-full shadow opacity-0 group-hover:opacity-100 transition-opacity -translate-x-1/2" />
+                </div>
+              </div>
+              <div className="flex justify-between text-[10px] text-white/50">
+                <span>{formatTime(currentTime)}</span>
+                <span>{formatTime(duration)}</span>
+              </div>
+            </div>
+          )}
+
+          <div className="flex items-center justify-center gap-2 sm:gap-4 flex-wrap">
+            {hasChannels && (
+              <button
+                onClick={goPrevChannel}
+                className={`p-2.5 sm:p-3 rounded-full bg-black/40 text-white backdrop-blur transition-all ${ctrlIndex === controls.indexOf('prevch') ? 'ring-2 ring-primary scale-110' : 'hover:bg-black/60'}`}
+                title="Canal anterior"
+              >
+                <ChevronLeft className="w-4 h-4 sm:w-5 sm:h-5" />
+              </button>
+            )}
+
+            {!isLive && (
+              <button
+                onClick={() => skip(-10)}
+                className={`p-2.5 sm:p-3 rounded-full bg-black/40 text-white backdrop-blur transition-all ${ctrlIndex === controls.indexOf('skipback') ? 'ring-2 ring-primary scale-110' : 'hover:bg-black/60'}`}
+                title="-10s"
+              >
+                <SkipBack className="w-4 h-4 sm:w-5 sm:h-5" />
+              </button>
+            )}
+
+            <button
+              onClick={togglePlay}
+              className={`p-3.5 sm:p-5 rounded-full bg-primary text-white transition-all shadow-lg ${ctrlIndex === controls.indexOf('play') ? 'ring-4 ring-white scale-110' : 'hover:scale-105 hover:bg-primary/90'}`}
+            >
+              {isPlaying
+                ? <Pause className="w-6 h-6 sm:w-8 sm:h-8 fill-current" />
+                : <Play className="w-6 h-6 sm:w-8 sm:h-8 fill-current" />}
+            </button>
+
+            {!isLive && (
+              <button
+                onClick={() => skip(10)}
+                className={`p-2.5 sm:p-3 rounded-full bg-black/40 text-white backdrop-blur transition-all ${ctrlIndex === controls.indexOf('skipfwd') ? 'ring-2 ring-primary scale-110' : 'hover:bg-black/60'}`}
+                title="+10s"
+              >
+                <SkipForward className="w-4 h-4 sm:w-5 sm:h-5" />
+              </button>
+            )}
+
+            {hasChannels && (
+              <button
+                onClick={goNextChannel}
+                className={`p-2.5 sm:p-3 rounded-full bg-black/40 text-white backdrop-blur transition-all ${ctrlIndex === controls.indexOf('nextch') ? 'ring-2 ring-primary scale-110' : 'hover:bg-black/60'}`}
+                title="Canal siguiente"
+              >
+                <ChevronRight className="w-4 h-4 sm:w-5 sm:h-5" />
+              </button>
+            )}
+
+            <div className="flex items-center gap-1.5 sm:gap-2 bg-black/40 rounded-full px-2.5 sm:px-3 py-1.5 sm:py-2 backdrop-blur">
+              <button
+                onClick={toggleMute}
+                className={`p-1 sm:p-1.5 rounded-full text-white transition-all ${ctrlIndex === controls.indexOf('mute') ? 'ring-2 ring-primary scale-110' : 'hover:bg-white/10'}`}
+              >
+                {isMuted || volume === 0 ? <VolumeX className="w-4 h-4 sm:w-5 sm:h-5" /> : <Volume2 className="w-4 h-4 sm:w-5 sm:h-5" />}
+              </button>
+              <input
+                type="range" min="0" max="1" step="0.05"
+                value={isMuted ? 0 : volume}
+                onChange={e => handleVolumeChange(parseFloat(e.target.value))}
+                className="w-14 sm:w-20 accent-primary"
+              />
+              <span className="text-[10px] text-white/50 w-7 text-right">{Math.round((isMuted ? 0 : volume) * 100)}%</span>
+            </div>
+
+            {type === 'channel' && (
+              <button
+                onClick={handleMinimize}
+                className={`p-2.5 sm:p-3 rounded-full bg-black/40 text-white backdrop-blur transition-all ${ctrlIndex === controls.indexOf('minimize') ? 'ring-2 ring-primary scale-110' : 'hover:bg-black/60'}`}
+                title="Minimizar"
+              >
+                <Minimize2 className="w-4 h-4 sm:w-5 sm:h-5" />
+              </button>
+            )}
+
+            <button
+              onClick={toggleFullscreen}
+              className={`p-2.5 sm:p-3 rounded-full bg-black/40 text-white backdrop-blur transition-all ${ctrlIndex === controls.indexOf('fullscreen') ? 'ring-2 ring-primary scale-110' : 'hover:bg-black/60'}`}
+            >
+              {isFullscreen ? <Minimize className="w-4 h-4 sm:w-5 sm:h-5" /> : <Maximize className="w-4 h-4 sm:w-5 sm:h-5" />}
+            </button>
+          </div>
+
+          <p className="text-center text-white/25 text-[9px] sm:text-[10px] pb-1">
+            {hasChannels
+              ? '▲ Canal siguiente · ▼ Canal anterior · ◄► Controles · Esc Minimizar'
+              : isLive
+                ? '▲▼ Volumen · ◄► Controles · Esc Salir'
+                : 'Espacio Reproducir · ▲▼ Volumen · Shift+◄► Saltar 30s · F Pantalla completa'}
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+}

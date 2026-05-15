@@ -1,0 +1,405 @@
+PRIMER PASO Y PRIORIDAD ABSOLUTA:
+
+Lo primero que debes hacer es tomar control completo del proyecto que YA está publicado en Vercel y trabajar directamente sobre esa versión actual del sistema.
+
+NO quiero un proyecto nuevo.
+NO quiero una copia aparte.
+NO quiero otra estructura diferente.
+
+Quiero que trabajes directamente sobre la página actual ya desplegada en Vercel y hagas todas las mejoras necesarias ahí mismo.
+
+Necesito que revises completamente:
+
+* Frontend
+* Backend
+* Base de datos
+* Rutas
+* Reproductor
+* Sistema de usuarios
+* Panel administrador
+* Compatibilidad móvil y TV
+* Deploy y configuración
+
+Y después de revisar todo:
+implementar todas las funciones nuevas SIN romper absolutamente nada de lo que ya funciona actualmente.
+
+IMPORTANTE:
+Todo debe seguir funcionando correctamente tanto en:
+
+* Vercel
+* Replit
+
+Necesito compatibilidad total entre ambas plataformas.
+
+NO eliminar:
+
+* usuarios
+* autenticación
+* panel admin
+* canales existentes
+* configuraciones actuales
+* diseño actual funcional
+
+SOLO:
+
+* mejorar
+* modernizar
+* optimizar
+* agregar nuevas funciones
+
+OBJETIVO FINAL:
+Convertir la plataforma actual en una plataforma premium de streaming estilo Netflix, manteniendo toda la base actual ya existente.
+
+==================================================
+DISEÑO VISUAL GLOBAL ESTILO NETFLIX
+===================================
+
+QUIERO UNA EXPERIENCIA VISUAL ESTILO NETFLIX EN TODA LA PLATAFORMA.
+
+Eso incluye:
+
+* Canales
+* Películas
+* Series
+* Playlists
+* Continuar viendo
+* Reproductor
+* Inicio/Home
+
+TODO debe verse moderno, premium y profesional, parecido a:
+
+* Netflix
+* Disney+
+* Prime Video
+
+REQUISITOS VISUALES GLOBALES:
+
+* Diseño oscuro elegante.
+* Tarjetas modernas.
+* Animaciones suaves.
+* Transiciones fluidas.
+* Efecto hover.
+* Fondos dinámicos.
+* Banner principal grande.
+* Scroll tipo streaming platform.
+* Compatible con control remoto.
+* Navegación ultra fluida.
+* Optimizado para Android TV.
+* Optimizado para Smart TV.
+* Optimizado para celulares.
+* Optimizado para tablets.
+* Optimizado para PWA.
+
+QUIERO QUE LA PLATAFORMA SE SIENTA COMO UNA APP REAL DE STREAMING PREMIUM.
+
+Además:
+
+* Todo el contenido debe mostrar posters.
+* Fondos/banner.
+* Descripción.
+* Categorías.
+* Información visual moderna.
+* Barra de progreso.
+* Continuar viendo.
+* Favoritos.
+* Tendencias.
+* Recomendaciones.
+
+==================================================
+PELÍCULAS
+=========
+
+Ya existe el apartado de películas, pero ahora debe permitir:
+
+* Pegar un link de nube/hosting donde tengo almacenados archivos multimedia.
+* Ese link contendrá carpetas y subcarpetas.
+* Dentro de esas carpetas habrá películas en distintos formatos.
+* El sistema debe detectar automáticamente todas las carpetas y películas.
+* Debe listar automáticamente las películas organizadas según la estructura de carpetas.
+* Debe soportar reproducción en la mayor cantidad posible de formatos:
+
+  * mp4
+  * mkv
+  * avi
+  * mov
+  * webm
+  * m3u8
+  * ts
+  * etc.
+
+IMPORTANTE:
+
+* El escaneo debe ser automático.
+* Al pegar el link, debe leer el contenido y crear la biblioteca automáticamente.
+* Debe cargar miniaturas/posters automáticamente si existen.
+* Debe mantener compatibilidad móvil, Android TV y Smart TV.
+
+Cada película debe tener:
+
+* Página individual.
+* Poster.
+* Banner.
+* Descripción.
+* Categoría.
+* Botón reproducir.
+* Botón continuar viendo.
+* Favoritos.
+* Recomendaciones relacionadas.
+* Barra de progreso.
+* Diseño premium tipo Netflix.
+
+==================================================
+SERIES
+======
+
+Crear un nuevo apartado llamado:
+SERIES
+
+Debe funcionar parecido al sistema de películas, pero organizado por carpetas y temporadas.
+
+Funcionamiento esperado:
+
+Ejemplo:
+
+Dragon Ball Z/
+
+* poster.jpg
+* banner.jpg
+* description.txt
+* Temporada 1/
+* Temporada 2/
+
+Dentro de temporadas:
+
+* Capítulo 1
+* Capítulo 2
+* etc.
+
+El sistema debe:
+
+* Detectar automáticamente las carpetas.
+* Organizar por serie.
+* Organizar temporadas.
+* Organizar capítulos.
+* Mostrar total de episodios.
+* Mostrar nombre exacto detectado desde carpetas.
+* Permitir reproducción inmediata.
+* Compatible con todos los formatos posibles.
+
+También necesito:
+
+* Buscador de series.
+* Continuar viendo.
+* Último episodio reproducido.
+* Reproducción automática siguiente episodio.
+* Mostrar duración por episodio.
+* Mostrar miniatura por episodio.
+* Mostrar episodio actual.
+* Diseño optimizado para TV y celular.
+
+==================================================
+CONTINUAR VIENDO
+================
+
+Implementar un sistema completo de:
+“Continuar viendo”
+
+Funcionamiento esperado:
+
+Cuando un usuario esté viendo:
+
+* una película
+* una serie
+* un capítulo
+
+El sistema debe guardar automáticamente:
+
+* Tiempo exacto de reproducción.
+* Último contenido visto.
+* Temporada y episodio.
+* Progreso visual.
+
+Luego cuando vuelva:
+
+* Debe aparecer sección:
+  “Continuar viendo”
+
+Y permitir:
+
+* Reanudar donde quedó.
+* Mostrar barra de progreso.
+* Mostrar poster.
+* Mostrar tiempo restante.
+* Mostrar nombre del contenido.
+
+Para SERIES:
+
+* Recordar:
+
+  * temporada
+  * episodio
+  * minuto exacto
+
+También:
+
+* Detectar automáticamente cuando termina un contenido.
+* Reproducir siguiente episodio automáticamente.
+* Marcar películas vistas automáticamente.
+
+IMPORTANTE:
+
+* El historial debe guardarse por usuario.
+* Debe funcionar en:
+
+  * móviles
+  * Android TV
+  * TV Box
+  * navegadores
+  * PWA
+
+==================================================
+METADATOS AUTOMÁTICOS
+=====================
+
+Cuando el sistema detecte automáticamente películas o series desde carpetas, también debe intentar detectar automáticamente:
+
+* Imagen/poster
+* Banner/fondo
+* Descripción
+* Nombre correcto
+* Año
+* Género
+* Duración
+* Temporadas
+* Número de episodios
+* Calidad de video
+* Clasificación
+
+Si dentro de la carpeta existe:
+
+* poster.jpg
+* cover.jpg
+* banner.jpg
+* fanart.jpg
+* folder.jpg
+* description.txt
+* metadata.json
+
+El sistema debe leer automáticamente esos archivos y usar esa información visual.
+
+Si NO existe:
+
+* permitir subir manualmente:
+
+  * poster
+  * banner
+  * descripción
+  * logo
+  * miniaturas
+
+Desde el panel administrador.
+
+==================================================
+PANEL ADMINISTRADOR
+===================
+
+El administrador debe poder:
+
+* Editar títulos.
+* Editar descripción.
+* Cambiar imágenes.
+* Cambiar categorías.
+* Cambiar orden.
+* Ocultar contenido.
+* Destacar contenido.
+* Marcar contenido como tendencia.
+* Editar posters y banners.
+* Gestionar películas.
+* Gestionar series.
+* Gestionar episodios.
+
+TODO sin romper la estructura actual.
+
+==================================================
+BOTÓN INSTALAR APK
+==================
+
+Actualmente existe un botón “Instalar”:
+
+* En login.
+* En canales.
+
+Cambiar texto por:
+“Instalar APK en dispositivos Android”
+
+Cuando el usuario haga clic:
+
+* Descargar automáticamente APK Android.
+
+Compatible con:
+
+* Celulares Android
+* Android TV
+* TV Box
+
+==================================================
+BOTÓN PWA / ACCESO DIRECTO
+==========================
+
+Debajo del botón APK crear otro botón:
+
+“Crear acceso directo a pantalla de inicio”
+
+Cuando hagan clic:
+
+* Mostrar instrucciones para:
+
+  * Android Chrome
+  * Android TV
+  * iPhone/iPad
+  * Smart TV
+
+También:
+
+* Detectar automáticamente soporte PWA.
+* Mostrar botón “Agregar a pantalla de inicio”.
+
+==================================================
+CANALES
+=======
+
+Actualmente los canales están en formato carrusel.
+
+Necesito:
+
+* Eliminar formato carrusel.
+* Mostrar todos los canales directamente.
+* Organizar por categorías.
+* Diseño más limpio y rápido.
+* Scroll vertical fluido.
+* Optimizado para TV y control remoto.
+* Mantener búsqueda.
+* Mantener categorías.
+* Mantener compatibilidad móvil y Smart TV.
+
+==================================================
+IMPORTANTE FINAL
+================
+
+NO romper:
+
+* autenticación
+* usuarios
+* panel admin
+* sistema actual
+* configuraciones
+* deploy actual
+
+SOLO:
+
+* mejorar
+* modernizar
+* optimizar
+* agregar funciones
+
+TODO debe sentirse como una plataforma streaming premium real estilo Netflix.

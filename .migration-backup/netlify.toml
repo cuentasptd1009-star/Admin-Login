@@ -1,0 +1,22 @@
+[build]
+  command = "pnpm --filter @workspace/super-tv run build && node artifacts/api-server/build-netlify.mjs"
+  publish = "artifacts/super-tv/dist/public"
+  functions = "netlify/functions"
+
+[build.environment]
+  NODE_VERSION = "20"
+  BASE_PATH = "/"
+
+[functions]
+  node_bundler = "none"
+
+[[redirects]]
+  from = "/api/*"
+  to = "/.netlify/functions/api"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
