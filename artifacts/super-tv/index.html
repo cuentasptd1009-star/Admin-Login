@@ -4,6 +4,7 @@
     <meta charset="UTF-8" />
     <link rel="icon" type="image/png" href="/icon-192.png" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
     <meta name="theme-color" content="#090E17" />
     <meta name="description" content="Tu Streaming de Confianza" />
     <title>Super TV</title>
@@ -30,10 +31,103 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+
+    <!-- Critical inline polyfills for pre-2016 browsers (old Smart TVs, Android 4.x, etc.) -->
     <script>
+      // Object.assign
+      if (typeof Object.assign !== 'function') {
+        Object.assign = function(target) {
+          for (var i = 1; i < arguments.length; i++) {
+            var src = arguments[i];
+            if (src) { for (var k in src) { if (Object.prototype.hasOwnProperty.call(src, k)) target[k] = src[k]; } }
+          }
+          return target;
+        };
+      }
+      // Array.isArray
+      if (!Array.isArray) { Array.isArray = function(a) { return Object.prototype.toString.call(a) === '[object Array]'; }; }
+      // Array.prototype.indexOf
+      if (!Array.prototype.indexOf) {
+        Array.prototype.indexOf = function(v) { for (var i = 0; i < this.length; i++) { if (this[i] === v) return i; } return -1; };
+      }
+      // Array.prototype.forEach
+      if (!Array.prototype.forEach) {
+        Array.prototype.forEach = function(fn, ctx) { for (var i = 0; i < this.length; i++) { fn.call(ctx, this[i], i, this); } };
+      }
+      // Array.prototype.map
+      if (!Array.prototype.map) {
+        Array.prototype.map = function(fn, ctx) { var r = []; for (var i = 0; i < this.length; i++) { r.push(fn.call(ctx, this[i], i, this)); } return r; };
+      }
+      // Array.prototype.filter
+      if (!Array.prototype.filter) {
+        Array.prototype.filter = function(fn, ctx) { var r = []; for (var i = 0; i < this.length; i++) { if (fn.call(ctx, this[i], i, this)) r.push(this[i]); } return r; };
+      }
+      // Array.prototype.find
+      if (!Array.prototype.find) {
+        Array.prototype.find = function(fn, ctx) { for (var i = 0; i < this.length; i++) { if (fn.call(ctx, this[i], i, this)) return this[i]; } };
+      }
+      // Array.prototype.includes
+      if (!Array.prototype.includes) {
+        Array.prototype.includes = function(v) { return this.indexOf(v) !== -1; };
+      }
+      // String.prototype.includes
+      if (!String.prototype.includes) {
+        String.prototype.includes = function(v) { return this.indexOf(v) !== -1; };
+      }
+      // String.prototype.startsWith
+      if (!String.prototype.startsWith) {
+        String.prototype.startsWith = function(v) { return this.slice(0, v.length) === v; };
+      }
+      // String.prototype.endsWith
+      if (!String.prototype.endsWith) {
+        String.prototype.endsWith = function(v) { return this.slice(-v.length) === v; };
+      }
+      // String.prototype.trim
+      if (!String.prototype.trim) {
+        String.prototype.trim = function() { return this.replace(/^\s+|\s+$/g, ''); };
+      }
+      // Number.isFinite / Number.isNaN
+      if (!Number.isFinite) { Number.isFinite = function(v) { return typeof v === 'number' && isFinite(v); }; }
+      if (!Number.isNaN) { Number.isNaN = function(v) { return typeof v === 'number' && isNaN(v); }; }
+      if (!Number.isInteger) { Number.isInteger = function(v) { return typeof v === 'number' && isFinite(v) && Math.floor(v) === v; }; }
+      // Math.sign / Math.trunc
+      if (!Math.sign) { Math.sign = function(v) { return v > 0 ? 1 : v < 0 ? -1 : 0; }; }
+      if (!Math.trunc) { Math.trunc = function(v) { return v < 0 ? Math.ceil(v) : Math.floor(v); }; }
+      // Object.keys / Object.values / Object.entries
+      if (!Object.values) { Object.values = function(o) { return Object.keys(o).map(function(k) { return o[k]; }); }; }
+      if (!Object.entries) { Object.entries = function(o) { return Object.keys(o).map(function(k) { return [k, o[k]]; }); }; }
+      // Element.prototype.closest
+      if (typeof Element !== 'undefined' && !Element.prototype.closest) {
+        Element.prototype.closest = function(sel) {
+          var el = this;
+          while (el && el.nodeType === 1) { if (el.matches ? el.matches(sel) : el.msMatchesSelector && el.msMatchesSelector(sel)) return el; el = el.parentElement || el.parentNode; }
+          return null;
+        };
+      }
+      // requestAnimationFrame
+      if (!window.requestAnimationFrame) {
+        window.requestAnimationFrame = window.webkitRequestAnimationFrame || window.mozRequestAnimationFrame || function(cb) { return setTimeout(cb, 16); };
+        window.cancelAnimationFrame = window.webkitCancelAnimationFrame || window.mozCancelAnimationFrame || clearTimeout;
+      }
+      // CustomEvent
+      try {
+        new window.CustomEvent('test');
+      } catch(e) {
+        var CE = function(event, params) {
+          params = params || { bubbles: false, cancelable: false, detail: undefined };
+          var evt = document.createEvent('CustomEvent');
+          evt.initCustomEvent(event, params.bubbles, params.cancelable, params.detail);
+          return evt;
+        };
+        CE.prototype = window.Event.prototype;
+        window.CustomEvent = CE;
+      }
+      // console safety
+      if (!window.console) { window.console = { log: function(){}, warn: function(){}, error: function(){} }; }
+
+      // Block devtools
       (function() {
         document.addEventListener('contextmenu', function(e) { e.preventDefault(); return false; });
-
         document.addEventListener('keydown', function(e) {
           if (e.key === 'F12') { e.preventDefault(); return false; }
           if (e.ctrlKey && e.shiftKey && (e.key === 'I' || e.key === 'i')) { e.preventDefault(); return false; }
@@ -42,19 +136,26 @@
           if (e.ctrlKey && (e.key === 'U' || e.key === 'u')) { e.preventDefault(); return false; }
           if (e.ctrlKey && (e.key === 'S' || e.key === 's')) { e.preventDefault(); return false; }
         });
-
       })();
     </script>
   </head>
   <body>
+    <!-- Fallback for browsers completely incompatible with ES5 -->
+    <noscript>
+      <div style="background:#090E17;color:#fff;font-family:Arial,sans-serif;text-align:center;padding:60px 20px;">
+        <h2>Super TV requiere JavaScript</h2>
+        <p>Por favor activa JavaScript en tu navegador para usar Super TV.</p>
+      </div>
+    </noscript>
+
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
     <script>
       if ('serviceWorker' in navigator) {
-        window.addEventListener('load', () => {
+        window.addEventListener('load', function() {
           navigator.serviceWorker.register('/sw.js')
-            .then(reg => console.log('SW registered:', reg.scope))
-            .catch(err => console.log('SW registration failed:', err));
+            .then(function(reg) { console.log('SW registered:', reg.scope); })
+            .catch(function(err) { console.log('SW registration failed:', err); });
         });
       }
     </script>
