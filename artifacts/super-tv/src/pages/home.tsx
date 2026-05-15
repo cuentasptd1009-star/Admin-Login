@@ -521,10 +521,6 @@ export default function Home() {
   const refreshUserData = useCallback(() => { setFavorites(getFavorites()); setAllProgress(getAllProgress()); setWatchHistory(getHistory()); }, []);
   useEffect(() => { window.addEventListener('focus', refreshUserData); return () => window.removeEventListener('focus', refreshUserData); }, [refreshUserData]);
 
-  useEffect(() => {
-    const inMenu = zone === 'tabs' || zone === 'search' || zone === 'actions';
-    setShowSidebar(inMenu);
-  }, [zone]);
 
   const doToggleFav = useCallback((movieId: number) => { toggleFavorite(movieId); setFavorites(getFavorites()); }, []);
   const handleLogout = () => { clearTokens(); setLocation('/'); };
@@ -552,23 +548,36 @@ export default function Home() {
 
       if (zone === 'tabs') {
         switch (e.key) {
-          case 'ArrowDown':
+          case 'ArrowDown': {
             e.preventDefault();
-            if (tabIndex < tabs.length - 1) setTabIndex(p => p + 1);
-            else { setZone('actions'); setActionIndex(0); }
+            if (tabIndex < tabs.length - 1) {
+              const next = tabIndex + 1;
+              setTabIndex(next);
+              setActiveTab(tabs[next].key);
+              setRowIndex(0); setColIndex(0);
+            } else { setZone('actions'); setActionIndex(0); }
             break;
-          case 'ArrowUp':
+          }
+          case 'ArrowUp': {
             e.preventDefault();
-            setTabIndex(p => Math.max(p - 1, 0));
+            if (tabIndex > 0) {
+              const prev = tabIndex - 1;
+              setTabIndex(prev);
+              setActiveTab(tabs[prev].key);
+              setRowIndex(0); setColIndex(0);
+            }
             break;
+          }
           case 'Enter':
             e.preventDefault();
             setActiveTab(tabs[tabIndex].key);
             setRowIndex(0); setColIndex(0);
+            setShowSidebar(false);
             setZone('rows');
             break;
           case 'ArrowRight':
             e.preventDefault();
+            setShowSidebar(false);
             if (showHero) { setZone('hero'); setHeroBtnIndex(0); }
             else { setZone('rows'); setRowIndex(0); setColIndex(0); }
             break;
@@ -579,7 +588,7 @@ export default function Home() {
           case 'ArrowLeft':
             e.preventDefault();
             if (heroBtnIndex > 0) setHeroBtnIndex(0);
-            else setZone('tabs');
+            else { setZone('tabs'); setShowSidebar(true); }
             break;
           case 'ArrowRight':
             e.preventDefault();
@@ -592,7 +601,7 @@ export default function Home() {
             break;
           case 'ArrowUp':
             e.preventDefault();
-            setZone('tabs');
+            setZone('tabs'); setShowSidebar(true);
             break;
           case 'Enter': {
             e.preventDefault();
@@ -614,7 +623,7 @@ export default function Home() {
           case 'ArrowLeft': e.preventDefault(); setZone('tabs'); break;
           case 'Enter': e.preventDefault(); openKeyboard(searchRef.current, { value: searchQuery, onChange: (v) => { setSearchQuery(v); setRowIndex(0); setColIndex(0); }, label: 'Buscar...' }); break;
           case 'ArrowDown': e.preventDefault(); setZone('rows'); setRowIndex(0); setColIndex(0); break;
-          case 'Escape': case 'Backspace': e.preventDefault(); setZone('tabs'); break;
+          case 'Escape': case 'Backspace': e.preventDefault(); setZone('tabs'); setShowSidebar(true); break;
         }
 
       } else if (zone === 'actions') {
@@ -631,6 +640,7 @@ export default function Home() {
             break;
           case 'ArrowRight':
             e.preventDefault();
+            setShowSidebar(false);
             setZone('rows'); setRowIndex(0); setColIndex(0);
             break;
           case 'Enter':
@@ -686,7 +696,7 @@ export default function Home() {
           case 'ArrowLeft':
             e.preventDefault();
             if (colIndex > 0) setColIndex(p => Math.max(p - 1, 0));
-            else setZone('tabs');
+            else { setZone('tabs'); setShowSidebar(true); }
             break;
           case 'ArrowDown': {
             e.preventDefault();
@@ -717,11 +727,11 @@ export default function Home() {
               } else if (rowIndex > 0) {
                 setRowIndex(p => p - 1); setColIndex(0);
               } else {
-                if (showHero) { setZone('hero'); setHeroBtnIndex(0); } else setZone('tabs');
+                if (showHero) { setZone('hero'); setHeroBtnIndex(0); }
               }
             } else {
               if (rowIndex > 0) { setRowIndex(p => p - 1); setColIndex(0); }
-              else { if (showHero) { setZone('hero'); setHeroBtnIndex(0); } else setZone('tabs'); }
+              else { if (showHero) { setZone('hero'); setHeroBtnIndex(0); } }
             }
             break;
           }
@@ -735,7 +745,7 @@ export default function Home() {
             }
             break;
           }
-          case 'Escape': case 'Backspace': e.preventDefault(); setZone('tabs'); break;
+          case 'Escape': case 'Backspace': e.preventDefault(); setZone('tabs'); setShowSidebar(true); break;
         }
       }
     };
@@ -762,7 +772,10 @@ export default function Home() {
       )}
 
       {/* ── NARROW ICON RAIL (desktop, always visible) ── */}
-      <div className="hidden md:flex fixed left-0 top-0 h-full z-50 w-16 bg-[#0a0a0a] border-r border-white/5 flex-col items-center py-4 gap-1">
+      <div
+        className="hidden md:flex fixed left-0 top-0 h-full z-50 w-16 bg-[#0a0a0a] border-r border-white/5 flex-col items-center py-4 gap-1"
+        onMouseEnter={() => { setShowSidebar(true); setZone('tabs'); }}
+      >
         <div className="mb-3 flex items-center justify-center w-10 h-10">
           <img src={logo} alt="Super TV" className="h-7 w-auto object-contain" />
         </div>
@@ -815,8 +828,11 @@ export default function Home() {
 
       {/* ── FULL SIDEBAR OVERLAY ── */}
       {showSidebar && <div className="fixed inset-0 z-[55] bg-black/60 backdrop-blur-sm" onClick={() => { setShowSidebar(false); setZone('rows'); }} />}
-      <aside className={`fixed left-0 top-0 h-full z-[60] bg-[#0d0d0d] border-r border-white/8 flex flex-col transition-all duration-300 w-72 shadow-2xl
-        ${showSidebar ? 'translate-x-0' : '-translate-x-full'}`}>
+      <aside
+        className={`fixed left-0 top-0 h-full z-[60] bg-[#0d0d0d] border-r border-white/8 flex flex-col transition-all duration-300 w-72 shadow-2xl
+        ${showSidebar ? 'translate-x-0' : '-translate-x-full'}`}
+        onMouseLeave={() => { setShowSidebar(false); setZone('rows'); }}
+      >
 
         {/* Logo */}
         <div className="p-5 pb-4 flex items-center justify-between">
@@ -880,6 +896,7 @@ export default function Home() {
             return (
               <button
                 key={item.key}
+                onMouseEnter={() => { setActiveTab(item.key); setTabIndex(i); setRowIndex(0); setColIndex(0); }}
                 onClick={() => { setActiveTab(item.key); setTabIndex(i); setRowIndex(0); setColIndex(0); setZone('rows'); setShowSidebar(false); }}
                 className={`w-full flex items-center gap-3.5 px-4 py-3 rounded-xl text-sm font-medium transition-all duration-150
                   ${isActive ? 'bg-white/12 text-white' : 'text-white/55 hover:text-white hover:bg-white/7'}
