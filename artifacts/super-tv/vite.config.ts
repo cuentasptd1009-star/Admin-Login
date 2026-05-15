@@ -1,11 +1,10 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
+import legacy from "@vitejs/plugin-legacy";
 import path from "path";
 import runtimeErrorOverlay from "@replit/vite-plugin-runtime-error-modal";
 
-// PORT and BASE_PATH are only required in development (dev server).
-// During production builds (e.g. Vercel CI) they may not be set — use safe defaults.
 const rawPort = process.env.PORT;
 const port = rawPort ? Number(rawPort) : 3000;
 if (rawPort && (Number.isNaN(port) || port <= 0)) {
@@ -20,6 +19,19 @@ export default defineConfig({
     react(),
     tailwindcss(),
     runtimeErrorOverlay(),
+    legacy({
+      targets: [
+        "chrome >= 49",
+        "firefox >= 52",
+        "safari >= 10",
+        "edge >= 15",
+        "samsung >= 5",
+        "not ie 11",
+      ],
+      additionalLegacyPolyfills: ["regenerator-runtime/runtime"],
+      renderLegacyChunks: true,
+      modernPolyfills: true,
+    }),
     ...(process.env.NODE_ENV !== "production" &&
     process.env.REPL_ID !== undefined
       ? [
@@ -43,6 +55,7 @@ export default defineConfig({
   },
   root: path.resolve(import.meta.dirname),
   build: {
+    target: ["es2015", "chrome49", "firefox52", "safari10", "edge15"],
     outDir: path.resolve(import.meta.dirname, "dist/public"),
     emptyOutDir: true,
   },
