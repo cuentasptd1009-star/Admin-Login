@@ -82,6 +82,7 @@
     "@dnd-kit/utilities": "^3.2.2",
     "dashjs": "^5.1.1",
     "flv.js": "^1.6.2",
-    "hls.js": "^1.6.16"
+    "hls.js": "^1.6.16",
+    "qrcode.react": "^4.2.0"
   }
 }
