@@ -1,9 +1,7 @@
 import { Router, type Request, type Response } from "express";
-import { Readable } from "node:stream";
 import { db } from "@workspace/db";
 import { channelsTable, settingsTable } from "@workspace/db";
 import { eq, asc, ilike, or, sql, inArray } from "drizzle-orm";
-import { URL as NodeURL } from "url";
 import { cache, TTL } from "../lib/cache.js";
 import { channelTracker } from "../lib/tracker.js";
 import {
@@ -18,53 +16,6 @@ import {
 import { requireAdminAuth, requireUserAuth, extractToken, getUserSession, getAdminSession } from "../lib/auth.js";
 import type { InsertChannel } from "@workspace/db";
 import { accessCodesTable } from "@workspace/db";
-
-// ─── HLS segment in-memory cache ─────────────────────────────────────────────
-// Each HLS segment is a short video chunk (2-10 s). Caching them means the
-// first viewer downloads the segment from upstream; every subsequent viewer
-// within the TTL is served instantly from RAM — zero upstream fetch, near-zero
-// CPU per segment after the first one.
-const MAX_CACHE_BYTES = 80 * 1024 * 1024; // 80 MB ceiling
-const SEGMENT_TTL_MS = 20_000;            // 20 s (segments are usually 2-10 s)
-const PLAYLIST_TTL_MS = 3_000;            // 3 s for m3u8 playlists
-
-interface CachedSegment { data: Buffer; ct: string; expires: number; size: number }
-const segmentCache = new Map<string, CachedSegment>();
-let cacheUsedBytes = 0;
-
-function segCacheGet(url: string): CachedSegment | null {
-  const entry = segmentCache.get(url);
-  if (!entry) return null;
-  if (Date.now() > entry.expires) {
-    cacheUsedBytes -= entry.size;
-    segmentCache.delete(url);
-    return null;
-  }
-  return entry;
-}
-
-function segCacheSet(url: string, data: Buffer, ct: string, isPlaylist: boolean): void {
-  const old = segmentCache.get(url);
-  if (old) cacheUsedBytes -= old.size;
-
-  // If we are over the ceiling, evict the oldest entries first
-  while (cacheUsedBytes + data.byteLength > MAX_CACHE_BYTES && segmentCache.size > 0) {
-    const firstKey = segmentCache.keys().next().value;
-    if (!firstKey) break;
-    const evicted = segmentCache.get(firstKey)!;
-    cacheUsedBytes -= evicted.size;
-    segmentCache.delete(firstKey);
-  }
-
-  const entry: CachedSegment = {
-    data,
-    ct,
-    expires: Date.now() + (isPlaylist ? PLAYLIST_TTL_MS : SEGMENT_TTL_MS),
-    size: data.byteLength,
-  };
-  segmentCache.set(url, entry);
-  cacheUsedBytes += data.byteLength;
-}
 
 const PRIVATE_IP_PATTERNS = [
   /^127\./,
@@ -101,27 +52,6 @@ function detectStreamFormat(url: string): string {
   return "native";
 }
 
-function resolveUrl(base: string, relative: string): string {
-  if (relative.startsWith("http://") || relative.startsWith("https://")) return relative;
-  try {
-    const baseUrl = new NodeURL(base);
-    if (relative.startsWith("/")) return `${baseUrl.protocol}//${baseUrl.host}${relative}`;
-    const dir = base.substring(0, base.lastIndexOf("/") + 1);
-    return `${dir}${relative}`;
-  } catch {
-    return relative;
-  }
-}
-
-function rewriteM3U8(content: string, baseUrl: string, channelId: number, token: string): string {
-  return content.split("\n").map((line) => {
-    const t = line.trim();
-    if (t === "" || t.startsWith("#")) return line;
-    const abs = resolveUrl(baseUrl, t);
-    const s = Buffer.from(abs).toString("base64url");
-    return `/api/channels/${channelId}/hls-relay?s=${s}&token=${encodeURIComponent(token)}`;
-  }).join("\n");
-}
 
 async function checkHlsAuth(req: Request, res: Response): Promise<{ ok: boolean; token?: string }> {
   const token = (req.query.token as string) || extractToken(req);
@@ -383,7 +313,6 @@ router.post("/channels/reorder", requireAdminAuth, async (req: Request, res: Res
 router.get("/channels/:id/hls-proxy", async (req: Request, res: Response) => {
   const auth = await checkHlsAuth(req, res);
   if (!auth.ok) return;
-  const token = auth.token!;
 
   const parsed = GetChannelParams.safeParse(req.params);
   if (!parsed.success) { res.status(400).json({ error: "Invalid id" }); return; }
@@ -393,54 +322,12 @@ router.get("/channels/:id/hls-proxy", async (req: Request, res: Response) => {
 
   channelTracker.record(channel.id, channel.name);
 
-  // Check playlist cache first (avoids upstream fetch if recently fetched)
-  const cached = segCacheGet(channel.streamUrl);
-  if (cached) {
-    res.setHeader("Content-Type", cached.ct);
-    res.setHeader("Cache-Control", "no-cache, no-store");
-    res.setHeader("Access-Control-Allow-Origin", "*");
-    res.setHeader("X-Cache", "HIT");
-    // Rewrite with fresh token (token can change per request)
-    const rewritten = rewriteM3U8(cached.data.toString("utf8"), channel.streamUrl, channel.id, token);
-    res.send(rewritten);
-    return;
-  }
-
-  try {
-    const response = await fetch(channel.streamUrl, {
-      headers: { "User-Agent": "Mozilla/5.0 SuperTV/1.0" },
-      signal: AbortSignal.timeout(7000),
-    });
-    if (!response.ok) { res.status(502).send("Stream unavailable"); return; }
-
-    const ct = response.headers.get("content-type") || "";
-    const isPlaylist = ct.includes("mpegurl") || channel.streamUrl.toLowerCase().includes(".m3u8");
-
-    if (isPlaylist) {
-      const text = await response.text();
-      // Cache the raw playlist text so the next request is served without an upstream fetch
-      segCacheSet(channel.streamUrl, Buffer.from(text, "utf8"), "application/vnd.apple.mpegurl", true);
-      const rewritten = rewriteM3U8(text, channel.streamUrl, channel.id, token);
-      res.setHeader("Content-Type", "application/vnd.apple.mpegurl");
-      res.setHeader("Cache-Control", "no-cache, no-store");
-      res.setHeader("Access-Control-Allow-Origin", "*");
-      res.setHeader("X-Cache", "MISS");
-      res.send(rewritten);
-    } else {
-      res.setHeader("Content-Type", ct || "application/octet-stream");
-      res.setHeader("Access-Control-Allow-Origin", "*");
-      const buf = Buffer.from(await response.arrayBuffer());
-      res.send(buf);
-    }
-  } catch {
-    res.status(502).send("Stream unavailable");
-  }
+  res.redirect(302, channel.streamUrl);
 });
 
 router.get("/channels/:id/hls-relay", async (req: Request, res: Response) => {
   const auth = await checkHlsAuth(req, res);
   if (!auth.ok) return;
-  const token = auth.token!;
 
   const parsed = GetChannelParams.safeParse(req.params);
   if (!parsed.success) { res.status(400).send("Invalid id"); return; }
@@ -461,58 +348,7 @@ router.get("/channels/:id/hls-relay", async (req: Request, res: Response) => {
     return;
   }
 
-  const isPlaylistUrl = segUrl.toLowerCase().includes(".m3u8");
-
-  // ── Serve from cache if available (zero upstream fetch, zero CPU) ──────────
-  const cached = segCacheGet(segUrl);
-  if (cached) {
-    res.setHeader("Content-Type", cached.ct);
-    res.setHeader("Access-Control-Allow-Origin", "*");
-    res.setHeader("X-Cache", "HIT");
-    if (isPlaylistUrl) {
-      res.setHeader("Cache-Control", "no-cache, no-store");
-      const rewritten = rewriteM3U8(cached.data.toString("utf8"), segUrl, parsed.data.id, token);
-      res.send(rewritten);
-    } else {
-      res.setHeader("Content-Length", String(cached.data.byteLength));
-      res.send(cached.data);
-    }
-    return;
-  }
-
-  // ── Fetch from upstream and populate cache ────────────────────────────────
-  try {
-    const response = await fetch(segUrl, {
-      headers: { "User-Agent": "Mozilla/5.0 SuperTV/1.0" },
-      signal: AbortSignal.timeout(7000),
-    });
-    if (!response.ok) { res.status(502).send("Segment unavailable"); return; }
-
-    const ct = response.headers.get("content-type") || "";
-    const isPlaylist = ct.includes("mpegurl") || isPlaylistUrl;
-
-    res.setHeader("Access-Control-Allow-Origin", "*");
-    res.setHeader("X-Cache", "MISS");
-
-    if (isPlaylist) {
-      const text = await response.text();
-      const buf = Buffer.from(text, "utf8");
-      segCacheSet(segUrl, buf, "application/vnd.apple.mpegurl", true);
-      const rewritten = rewriteM3U8(text, segUrl, parsed.data.id, token);
-      res.setHeader("Content-Type", "application/vnd.apple.mpegurl");
-      res.setHeader("Cache-Control", "no-cache, no-store");
-      res.send(rewritten);
-    } else {
-      // Buffer the segment so we can cache it and serve it in one shot
-      const buf = Buffer.from(await response.arrayBuffer());
-      segCacheSet(segUrl, buf, ct || "video/MP2T", false);
-      res.setHeader("Content-Type", ct || "video/MP2T");
-      res.setHeader("Content-Length", String(buf.byteLength));
-      res.send(buf);
-    }
-  } catch {
-    res.status(502).send("Segment unavailable");
-  }
+  res.redirect(302, segUrl);
 });
 
 router.get("/channels/:id/stream", async (req: Request, res: Response) => {
