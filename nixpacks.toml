@@ -1,0 +1,11 @@
+[phases.setup]
+nixPkgs = ["nodejs_22"]
+
+[phases.install]
+cmds = ["npm install -g pnpm@10 && pnpm install --no-frozen-lockfile"]
+
+[phases.build]
+cmds = ["pnpm --filter @workspace/api-server run build && BASE_PATH=/ PORT=3000 pnpm --filter @workspace/super-tv run build"]
+
+[start]
+cmd = "node --enable-source-maps --max-old-space-size=512 ./artifacts/api-server/dist/index.mjs"
