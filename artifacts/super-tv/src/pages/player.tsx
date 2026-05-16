@@ -56,6 +56,10 @@ export default function PlayerPage() {
   })();
   const isExpired = session?.type === 'user' && daysLeft !== null && daysLeft <= 0;
 
+  useEffect(() => {
+    window.history.replaceState({}, '', window.location.pathname);
+  }, []);
+
   const searchParams = new URLSearchParams(window.location.search);
   const channelId = searchParams.get('channelId') || '';
   const miniState = getMiniPlayerState();
