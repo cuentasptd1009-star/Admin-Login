@@ -4503,6 +4503,8 @@ function SeriesManager() {
   const [showYtBulk, setShowYtBulk] = useState<{ seriesId: number; seasonId: number; seasonEpCount: number } | null>(null);
   const [ytBulkText, setYtBulkText] = useState('');
   const [ytBulkAdding, setYtBulkAdding] = useState(false);
+  const [editEp, setEditEp] = useState<EpisodeRow | null>(null);
+  const [editEpSaving, setEditEpSaving] = useState(false);
 
   const form0: Partial<SeriesRow> = { title: '', description: '', poster: '', banner: '', category: '', genre: '', year: undefined, featured: false, hidden: false };
   const [createForm, setCreateForm] = useState<Partial<SeriesRow>>(form0);
@@ -4641,6 +4643,25 @@ function SeriesManager() {
   const handleDeleteEpisode = async (epId: number, seriesId: number) => {
     if (!confirm('¿Eliminar este episodio?')) return;
     await fetch(`${BASE_API}/api/episodes/${epId}`, { method: 'DELETE', headers: { Authorization: `Bearer ${getAdminToken()}` } });
+    refresh();
+  };
+
+  const handleSaveEpisode = async () => {
+    if (!editEp) return;
+    setEditEpSaving(true);
+    const r = await fetch(`${BASE_API}/api/episodes/${editEp.id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${getAdminToken()}` },
+      body: JSON.stringify({
+        title: editEp.title,
+        filePath: editEp.filePath,
+        thumbnail: editEp.thumbnail || undefined,
+        episodeNumber: editEp.episodeNumber,
+      }),
+    });
+    setEditEpSaving(false);
+    if (r.ok) { toast({ title: 'Episodio actualizado' }); setEditEp(null); refresh(); }
+    else { const d = await r.json().catch(() => ({})); toast({ variant: 'destructive', title: (d as any).error || 'Error al guardar' }); }
   };
 
   const handleYtBulkAdd = async () => {
@@ -5111,13 +5132,45 @@ function SeriesManager() {
                       {season.episodes.length > 0 && (
                         <div className="divide-y divide-border">
                           {season.episodes.map(ep => (
-                            <div key={ep.id} className="flex items-center gap-2 px-3 py-2 hover:bg-muted/30 transition-colors">
-                              <span className="text-xs text-muted-foreground w-6 flex-shrink-0">E{ep.episodeNumber}</span>
-                              <div className="flex-1 min-w-0">
-                                <p className="text-xs font-medium truncate">{ep.title}</p>
-                                <p className="text-[10px] text-muted-foreground truncate">{ep.filePath}</p>
+                            <div key={ep.id}>
+                              <div className="flex items-center gap-2 px-3 py-2 hover:bg-muted/30 transition-colors">
+                                <span className="text-xs text-muted-foreground w-6 flex-shrink-0">E{ep.episodeNumber}</span>
+                                <div className="flex-1 min-w-0">
+                                  <p className="text-xs font-medium truncate">{ep.title}</p>
+                                  <p className="text-[10px] text-muted-foreground truncate">{ep.filePath}</p>
+                                  {ep.thumbnail && <p className="text-[10px] text-blue-400 truncate">🖼 {ep.thumbnail}</p>}
+                                </div>
+                                <Button size="sm" variant="ghost" className="h-7 w-7 p-0 flex-shrink-0" onClick={() => setEditEp(editEp?.id === ep.id ? null : { ...ep })}><Pencil className="w-3.5 h-3.5" /></Button>
+                                <Button size="sm" variant="ghost" className="h-7 w-7 p-0 text-destructive hover:text-destructive flex-shrink-0" onClick={() => handleDeleteEpisode(ep.id, series.id)}><Trash2 className="w-3.5 h-3.5" /></Button>
                               </div>
-                              <Button size="sm" variant="ghost" className="h-7 w-7 p-0 text-destructive hover:text-destructive flex-shrink-0" onClick={() => handleDeleteEpisode(ep.id, series.id)}><Trash2 className="w-3.5 h-3.5" /></Button>
+                              {editEp?.id === ep.id && (
+                                <div className="px-3 pb-3 pt-1 bg-muted/20 border-t border-border space-y-2">
+                                  <div className="grid grid-cols-2 gap-2">
+                                    <div className="space-y-1">
+                                      <label className="text-[10px] text-muted-foreground">N° episodio</label>
+                                      <Input type="number" value={editEp.episodeNumber} onChange={e => setEditEp(p => p ? { ...p, episodeNumber: Number(e.target.value) } : p)} className="bg-background text-xs h-8" />
+                                    </div>
+                                    <div className="space-y-1">
+                                      <label className="text-[10px] text-muted-foreground">Título</label>
+                                      <Input value={editEp.title} onChange={e => setEditEp(p => p ? { ...p, title: e.target.value } : p)} className="bg-background text-xs h-8" />
+                                    </div>
+                                  </div>
+                                  <div className="space-y-1">
+                                    <label className="text-[10px] text-muted-foreground">URL del video (YouTube u otro)</label>
+                                    <Input value={editEp.filePath} onChange={e => setEditEp(p => p ? { ...p, filePath: e.target.value } : p)} placeholder="https://youtube.com/watch?v=..." className="bg-background text-xs h-8 font-mono" />
+                                  </div>
+                                  <div className="space-y-1">
+                                    <label className="text-[10px] text-muted-foreground">URL de imagen/miniatura (opcional)</label>
+                                    <Input value={editEp.thumbnail || ''} onChange={e => setEditEp(p => p ? { ...p, thumbnail: e.target.value } : p)} placeholder="https://i.ytimg.com/vi/..." className="bg-background text-xs h-8" />
+                                  </div>
+                                  <div className="flex gap-2">
+                                    <Button size="sm" onClick={handleSaveEpisode} disabled={editEpSaving} className="h-8 text-xs">
+                                      {editEpSaving ? <Loader2 className="w-3 h-3 animate-spin mr-1" /> : null} Guardar
+                                    </Button>
+                                    <Button size="sm" variant="ghost" onClick={() => setEditEp(null)} className="h-8 text-xs">Cancelar</Button>
+                                  </div>
+                                </div>
+                              )}
                             </div>
                           ))}
                         </div>
