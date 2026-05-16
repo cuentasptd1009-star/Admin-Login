@@ -4,6 +4,7 @@ import { Play, Pause, Volume2, VolumeX, Maximize, Minimize, ArrowLeft, RotateCcw
 import { YouTubePlayerPage } from '@/components/YouTubePlayerPage';
 import logo from '@assets/imagen_1777670460131.png';
 import { getProgress, saveProgress, addToHistory, saveEpisodeProgress, getEpisodeProgress } from '@/lib/user-data';
+import { normalizeKey } from '@/lib/tv-remote';
 
 type VideoFormat = 'hls' | 'dash' | 'flv' | 'native' | 'youtube';
 
@@ -356,12 +357,24 @@ export default function VodPlayerPage() {
         }
         return;
       }
-      switch (e.key) {
-        case ' ': e.preventDefault(); togglePlay(); break;
+      switch (normalizeKey(e)) {
+        case ' ':
+        case 'MediaPlayPause':
+          e.preventDefault(); togglePlay(); showControlsTemporarily(); break;
         case 'ArrowRight': e.preventDefault(); skip(e.shiftKey ? 30 : 10); showControlsTemporarily(); break;
         case 'ArrowLeft': e.preventDefault(); skip(e.shiftKey ? -30 : -10); showControlsTemporarily(); break;
         case 'ArrowUp': e.preventDefault(); { const v = videoRef.current; if (v) v.volume = Math.min(1, v.volume + 0.1); } break;
         case 'ArrowDown': e.preventDefault(); { const v = videoRef.current; if (v) v.volume = Math.max(0, v.volume - 0.1); } break;
+        case 'MediaFastForward':
+          e.preventDefault(); skip(10); showControlsTemporarily(); break;
+        case 'MediaRewind':
+          e.preventDefault(); skip(-10); showControlsTemporarily(); break;
+        case 'VolumeUp':
+          e.preventDefault(); { const v = videoRef.current; if (v) v.volume = Math.min(1, v.volume + 0.1); } break;
+        case 'VolumeDown':
+          e.preventDefault(); { const v = videoRef.current; if (v) v.volume = Math.max(0, v.volume - 0.1); } break;
+        case 'VolumeMute':
+          e.preventDefault(); toggleMute(); break;
         case 'f': case 'F': toggleFullscreen(); break;
         case 'm': case 'M': toggleMute(); break;
         case 'Enter':

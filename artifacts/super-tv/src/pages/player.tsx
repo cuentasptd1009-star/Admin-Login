@@ -7,6 +7,7 @@ import { useGetMe, getGetMeQueryKey } from '@workspace/api-client-react';
 import { getProgress, saveProgress, addToHistory, saveEpisodeProgress, getEpisodeProgress } from '@/lib/user-data';
 import { getMiniPlayerState, setMiniPlayerState, updateMiniPlayerState } from '@/lib/mini-player-state';
 import { getToken } from '@/lib/auth';
+import { normalizeKey } from '@/lib/tv-remote';
 
 type VideoFormat = 'hls' | 'dash' | 'flv' | 'native' | 'youtube';
 
@@ -559,7 +560,7 @@ export default function PlayerPage() {
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      switch (e.key) {
+      switch (normalizeKey(e)) {
         case 'ArrowRight':
           e.preventDefault();
           if (e.shiftKey) { skip(30); }
@@ -582,6 +583,16 @@ export default function PlayerPage() {
           if (hasChannels) goPrevChannel();
           else handleVolumeChange(volumeRef.current - 0.1);
           break;
+        case 'ChannelUp':
+          e.preventDefault();
+          if (hasChannels) goNextChannel();
+          showControlsTemporarily();
+          break;
+        case 'ChannelDown':
+          e.preventDefault();
+          if (hasChannels) goPrevChannel();
+          showControlsTemporarily();
+          break;
         case 'Enter':
           e.preventDefault();
           switch (controls[ctrlIndex]) {
@@ -603,8 +614,32 @@ export default function PlayerPage() {
           else handleMinimize();
           break;
         case ' ':
+        case 'MediaPlayPause':
           e.preventDefault();
           togglePlay();
+          showControlsTemporarily();
+          break;
+        case 'MediaFastForward':
+          e.preventDefault();
+          skip(10);
+          showControlsTemporarily();
+          break;
+        case 'MediaRewind':
+          e.preventDefault();
+          skip(-10);
+          showControlsTemporarily();
+          break;
+        case 'VolumeUp':
+          e.preventDefault();
+          handleVolumeChange(volumeRef.current + 0.1);
+          break;
+        case 'VolumeDown':
+          e.preventDefault();
+          handleVolumeChange(volumeRef.current - 0.1);
+          break;
+        case 'VolumeMute':
+          e.preventDefault();
+          toggleMute();
           break;
         case 'f':
         case 'F':

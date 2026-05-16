@@ -1,4 +1,5 @@
 import { useLocation, useRoute } from 'wouter';
+import { normalizeKey } from '@/lib/tv-remote';
 import { useListMovies, getListMoviesQueryKey, useGetMe, getGetMeQueryKey } from '@workspace/api-client-react';
 import { Play, ArrowLeft, Film, Tag, Search, X, Lock, Heart, Info } from 'lucide-react';
 import { getProgress, toggleFavorite, getFavorites, toggleExternalFavorite, isExternalFavorite, addExternalHistory, type ExternalItem } from '@/lib/user-data';
@@ -214,7 +215,7 @@ export default function MovieDetail() {
       const isInputFocused = activeEl instanceof HTMLInputElement || activeEl instanceof HTMLTextAreaElement || (activeEl instanceof HTMLElement && activeEl.isContentEditable);
       if (isInputFocused) return;
       if (mvZone === 'buttons') {
-        switch (e.key) {
+        switch (normalizeKey(e)) {
           case 'ArrowLeft':
             e.preventDefault();
             if (btnIndex > 0) setBtnIndex(p => p - 1);
@@ -236,6 +237,7 @@ export default function MovieDetail() {
           case 'ArrowUp':
             e.preventDefault();
             break;
+          case 'MediaPlayPause':
           case 'Enter':
             e.preventDefault();
             actionButtons[btnIndex]?.action();
@@ -247,7 +249,7 @@ export default function MovieDetail() {
             break;
         }
       } else if (mvZone === 'catpills') {
-        switch (e.key) {
+        switch (normalizeKey(e)) {
           case 'ArrowLeft':
             e.preventDefault();
             setCatPillIdx(p => Math.max(0, p - 1));
@@ -256,6 +258,7 @@ export default function MovieDetail() {
             e.preventDefault();
             setCatPillIdx(p => Math.min(allPills.length - 1, p + 1));
             break;
+          case 'MediaPlayPause':
           case 'Enter': {
             e.preventDefault();
             const selected = allPills[catPillIdx] ?? null;
@@ -278,7 +281,7 @@ export default function MovieDetail() {
         const totalItems = related.length;
         const totalRows = Math.ceil(totalItems / cols);
         const currentIdx = gridRow * cols + gridCol;
-        switch (e.key) {
+        switch (normalizeKey(e)) {
           case 'ArrowRight':
             e.preventDefault();
             if (gridCol < cols - 1 && currentIdx + 1 < totalItems) setGridCol(p => p + 1);
@@ -304,6 +307,7 @@ export default function MovieDetail() {
             if (gridRow > 0) setGridRow(p => p - 1);
             else setMvZone(categories.length > 0 ? 'catpills' : 'buttons');
             break;
+          case 'MediaPlayPause':
           case 'Enter': {
             e.preventDefault();
             const idx = currentIdx;

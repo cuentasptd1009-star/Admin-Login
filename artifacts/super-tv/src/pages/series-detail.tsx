@@ -1,4 +1,5 @@
 import { useLocation, useRoute } from 'wouter';
+import { normalizeKey } from '@/lib/tv-remote';
 import { useEffect, useState, useMemo, useRef } from 'react';
 import { Play, ArrowLeft, Heart, ChevronDown, ChevronUp, Tv2, Lock, X, Clock, Film } from 'lucide-react';
 import { useGetMe, getGetMeQueryKey } from '@workspace/api-client-react';
@@ -122,7 +123,7 @@ export default function SeriesDetail() {
     if (!series) return;
     const handleKeyDown = (e: KeyboardEvent) => {
       if (sdZone === 'buttons') {
-        switch (e.key) {
+        switch (normalizeKey(e)) {
           case 'ArrowLeft':
             e.preventDefault();
             if (btnIdx > 0) setBtnIdx(p => p - 1);
@@ -139,6 +140,7 @@ export default function SeriesDetail() {
           case 'ArrowUp':
             e.preventDefault();
             break;
+          case 'MediaPlayPause':
           case 'Enter':
             e.preventDefault();
             if (btnIdx === 0 && hasPlayBtn) {
@@ -156,7 +158,7 @@ export default function SeriesDetail() {
         }
 
       } else if (sdZone === 'seasons') {
-        switch (e.key) {
+        switch (normalizeKey(e)) {
           case 'ArrowLeft':
             e.preventDefault();
             if (activeSeason > 0) setActiveSeason(p => p - 1);
@@ -174,6 +176,7 @@ export default function SeriesDetail() {
             e.preventDefault();
             setSdZone('buttons');
             break;
+          case 'MediaPlayPause':
           case 'Enter':
             e.preventDefault();
             setSdZone('episodes'); setEpIdx(0);
@@ -187,7 +190,7 @@ export default function SeriesDetail() {
 
       } else {
         // episodes zone
-        switch (e.key) {
+        switch (normalizeKey(e)) {
           case 'ArrowDown':
             e.preventDefault();
             if (epIdx < episodes.length - 1) setEpIdx(p => p + 1);
@@ -197,6 +200,7 @@ export default function SeriesDetail() {
             if (epIdx > 0) setEpIdx(p => p - 1);
             else { if (series.seasons.length > 1) setSdZone('seasons'); else setSdZone('buttons'); }
             break;
+          case 'MediaPlayPause':
           case 'Enter': {
             e.preventDefault();
             const ep = episodes[epIdx];

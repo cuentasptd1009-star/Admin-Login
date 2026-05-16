@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import { normalizeKey } from '@/lib/tv-remote';
 import { useLocation } from 'wouter';
 import { YouTubePlayerPage } from '@/components/YouTubePlayerPage';
 import { ContentCard } from '@/components/ContentCard';
@@ -882,7 +883,7 @@ export default function Home() {
       };
 
       if (zone === 'sidebar') {
-        switch (e.key) {
+        switch (normalizeKey(e)) {
           case 'ArrowDown':
             e.preventDefault();
             setSidebarIdx(p => Math.min(p + 1, sidebarItems.length - 1));
@@ -929,7 +930,7 @@ export default function Home() {
         }
 
       } else if (zone === 'hero') {
-        switch (e.key) {
+        switch (normalizeKey(e)) {
           case 'ArrowLeft':
             e.preventDefault();
             if (heroBtnIndex > 0) setHeroBtnIndex(0);
@@ -947,6 +948,7 @@ export default function Home() {
           case 'ArrowUp':
             e.preventDefault();
             break;
+          case 'MediaPlayPause':
           case 'Enter': {
             e.preventDefault();
             const heroItem = hoveredHero ?? heroBannerItems[heroBannerIdx] ?? heroBannerItems[0];
@@ -965,7 +967,7 @@ export default function Home() {
       } else if (zone === 'miniplayer') {
         const mini = getMiniPlayerState();
         if (!mini?.isMinimized) { setZone('rows'); return; }
-        switch (e.key) {
+        switch (normalizeKey(e)) {
           case 'ArrowLeft': {
             e.preventDefault();
             if (mini.channels.length > 0) {
@@ -996,7 +998,7 @@ export default function Home() {
       } else if (zone === 'catfilter') {
         // category filter pills navigation (channels tab only)
         const totalPills = channelRows.length + 1; // Todos + one per category
-        switch (e.key) {
+        switch (normalizeKey(e)) {
           case 'ArrowRight':
             e.preventDefault();
             setCatFilterIdx(p => Math.min(p + 1, totalPills - 1));
@@ -1031,7 +1033,7 @@ export default function Home() {
         // rows zone
         const currentRow = activeRows[rowIndex];
         const currentLen = currentRow?.items?.length ?? 0;
-        switch (e.key) {
+        switch (normalizeKey(e)) {
           case 'ArrowRight':
             e.preventDefault();
             setColIndex(p => Math.min(p + 1, currentLen - 1));
@@ -1083,6 +1085,7 @@ export default function Home() {
             }
             break;
           }
+          case 'MediaPlayPause':
           case 'Enter': {
             e.preventDefault();
             if (activeTab === 'series') {
