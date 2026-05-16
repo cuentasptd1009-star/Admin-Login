@@ -700,7 +700,13 @@ export default function Home() {
   }, [activeTab, channelRows, seriesRows, contentRows]);
 
   useEffect(() => { setRowIndex(0); setColIndex(0); setSelectedChannelCategory(null); }, [activeTab, searchQuery]);
-  useEffect(() => { if (zone === 'rows' && rowRefs.current[rowIndex]) rowRefs.current[rowIndex]?.scrollIntoView({ behavior: 'smooth', block: 'center' }); }, [rowIndex, zone]);
+  useEffect(() => {
+    if (zone === 'hero') {
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    } else if (zone === 'rows' && rowRefs.current[rowIndex]) {
+      rowRefs.current[rowIndex]?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+  }, [rowIndex, zone]);
   useEffect(() => {
     if (zone !== 'rows') return;
     const el = document.querySelector('[data-tv-focused="true"]') as HTMLElement | null;

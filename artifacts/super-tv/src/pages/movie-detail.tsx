@@ -198,7 +198,12 @@ export default function MovieDetail() {
   const allPills = useMemo(() => [null, ...categories], [categories]);
 
   useEffect(() => {
-    if (mvZone === 'grid' && focusedGridRef.current) {
+    if (mvZone === 'buttons') {
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    } else if (mvZone === 'catpills') {
+      const el = document.querySelector('[data-mv-zone="catpills"]') as HTMLElement | null;
+      if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    } else if (mvZone === 'grid' && focusedGridRef.current) {
       focusedGridRef.current.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'center' });
     }
   }, [mvZone, gridRow, gridCol]);
@@ -507,7 +512,7 @@ export default function MovieDetail() {
       </div>
 
       {(movies?.length ?? 0) > 1 && (
-        <section className="px-4 sm:px-8 md:px-14 py-8 space-y-5">
+        <section data-mv-zone="catpills" className="px-4 sm:px-8 md:px-14 py-8 space-y-5">
           <div className="flex flex-col sm:flex-row sm:items-center gap-3">
             <div className="flex items-center gap-2 flex-1">
               <div className="w-1 h-6 bg-orange-500 rounded-full" />
