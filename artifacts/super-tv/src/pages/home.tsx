@@ -1620,7 +1620,7 @@ export default function Home() {
                                 if (isExpired) { setShowExpiredOverlay(true); return; }
                                 if (item.type === 'external' && item.externalItem) {
                                   setExternalPlayer({ title: item.title, type: item.externalItem.source, videoId: item.externalItem.videoId, url: item.externalItem.url, thumbnail: item.externalItem.thumbnail });
-                                } else if (item.type === 'series') setLocation(`/serie/${item.id}`);
+                                } else if (item.type === 'series') setLocation(`/serie/${item.id}?autoplay=1`);
                                 else setLocation(`/pelicula/${item.id}`);
                               }}
                             />

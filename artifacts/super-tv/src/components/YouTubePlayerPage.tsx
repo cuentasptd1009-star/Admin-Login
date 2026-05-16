@@ -484,14 +484,20 @@ export function YouTubePlayerPage({ videoId, title, onBack, isFav, onFavToggle, 
         </div>
       </div>
 
-      {/* Next episode overlay — appears 10s before end */}
-      {showNextEp && onNextEpisode && nextEpisodeId && (
+      {/* Next episode overlay — always visible when next episode exists */}
+      {onNextEpisode && nextEpisodeId && (
         <div
-          className="absolute bottom-28 right-4 z-40 bg-black/90 backdrop-blur border border-white/25 rounded-xl px-4 py-3 flex items-center gap-3 shadow-2xl ring-1 ring-white/15"
+          className={`absolute bottom-28 right-4 z-40 backdrop-blur rounded-xl px-4 py-3 flex items-center gap-3 shadow-2xl transition-all duration-300 ${
+            showNextEp
+              ? 'bg-black/90 border border-white/30 animate-pulse'
+              : 'bg-black/55 border border-white/10'
+          }`}
           onClick={e => e.stopPropagation()}
         >
           <div className="text-sm text-white leading-snug">
-            <div className="text-white/50 text-[11px] mb-0.5">Siguiente capítulo</div>
+            <div className={`text-[11px] mb-0.5 ${showNextEp ? 'text-red-400 font-medium' : 'text-white/40'}`}>
+              {showNextEp ? '⏭ Siguiente capítulo' : 'Siguiente capítulo'}
+            </div>
             <div className="font-semibold truncate max-w-[180px]">{nextEpisodeTitle || `Capítulo ${nextEpisodeNumber}`}</div>
             {(nextSeasonNumber || nextEpisodeNumber) && (
               <div className="text-white/40 text-[10px] mt-0.5">
@@ -501,7 +507,11 @@ export function YouTubePlayerPage({ videoId, title, onBack, isFav, onFavToggle, 
           </div>
           <button
             onClick={e => { e.stopPropagation(); onNextEpisode(); }}
-            className="flex items-center gap-1 px-3 py-2 bg-red-600 text-white rounded-lg text-xs font-semibold hover:bg-red-500 active:scale-95 transition-all whitespace-nowrap flex-shrink-0"
+            className={`flex items-center gap-1 px-3 py-2 rounded-lg text-xs font-semibold active:scale-95 transition-all whitespace-nowrap flex-shrink-0 ${
+              showNextEp
+                ? 'bg-red-600 text-white hover:bg-red-500'
+                : 'bg-white/15 text-white hover:bg-red-600/80'
+            }`}
           >
             Siguiente <ChevronRight className="w-3.5 h-3.5" />
           </button>

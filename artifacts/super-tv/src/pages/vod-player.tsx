@@ -557,16 +557,20 @@ export default function VodPlayerPage() {
         </div>
       )}
 
-      {showNextEp && nextEpisodeId && (
+      {nextEpisodeId && (
         <div
           className={`absolute bottom-28 right-4 z-30 backdrop-blur rounded-xl px-4 py-3 flex items-center gap-3 shadow-2xl transition-all duration-200 ${
             nextEpFocused
               ? 'bg-black/95 border-2 border-primary ring-2 ring-primary/50 scale-105'
-              : 'bg-black/85 border border-white/30 ring-2 ring-white/20'
+              : showNextEp
+                ? 'bg-black/90 border border-white/40 animate-pulse'
+                : 'bg-black/60 border border-white/15'
           }`}
         >
           <div className="text-sm text-white">
-            <div className="text-white/50 text-xs mb-0.5">Siguiente episodio</div>
+            <div className={`text-xs mb-0.5 ${showNextEp ? 'text-primary font-medium' : 'text-white/40'}`}>
+              {showNextEp ? '⏭ Siguiente episodio' : 'Siguiente episodio'}
+            </div>
             <div className="font-medium truncate max-w-[180px]">{nextEpisodeTitle}</div>
             <div className={`text-[10px] mt-0.5 ${nextEpFocused ? 'text-primary font-semibold' : 'text-white/30'}`}>
               {nextEpFocused
@@ -581,7 +585,9 @@ export default function VodPlayerPage() {
             className={`flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors whitespace-nowrap ${
               nextEpFocused
                 ? 'bg-primary text-white scale-105 shadow-lg shadow-primary/40'
-                : 'bg-primary/70 text-white hover:bg-primary/90'
+                : showNextEp
+                  ? 'bg-primary text-white hover:bg-primary/90'
+                  : 'bg-white/15 text-white hover:bg-primary/70'
             }`}
           >
             Reproducir <ChevronRight className="w-3.5 h-3.5" />

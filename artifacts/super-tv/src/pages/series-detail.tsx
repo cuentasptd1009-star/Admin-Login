@@ -26,9 +26,10 @@ function fmtProgress(secs: number): string {
 type SdZone = 'buttons' | 'seasons' | 'episodes';
 
 export default function SeriesDetail() {
-  const [, setLocation] = useLocation();
+  const [location, setLocation] = useLocation();
   const [, params] = useRoute('/serie/:id');
   const id = Number(params?.id);
+  const autoplay = new URLSearchParams(location.split('?')[1] ?? '').get('autoplay') === '1';
 
   const [series, setSeries] = useState<SeriesDetail | null>(null);
   const [loading, setLoading] = useState(true);
@@ -59,6 +60,17 @@ export default function SeriesDetail() {
     if (!id) return;
     setIsFav(getSeriesFavorites().includes(id));
   }, [id]);
+
+  // Auto-play last-watched episode when coming from "Seguir viendo"
+  useEffect(() => {
+    if (!autoplay || !series || loading) return;
+    const progress = getSeriesProgress(id);
+    if (!progress?.time || !progress.seasonId || !progress.episodeId) return;
+    const season = series.seasons.find(s => s.id === progress.seasonId);
+    const episode = season?.episodes.find(e => e.id === progress.episodeId);
+    if (season && episode) handlePlayEpisode(episode, season, progress.time);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoplay, series, loading]);
 
   useEffect(() => {
     if (sdZone === 'episodes' && focusedEpRef.current) {
