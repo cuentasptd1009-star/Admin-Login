@@ -8,7 +8,6 @@ const router = Router();
 
 const YT_API = "https://www.googleapis.com/youtube/v3";
 
-// Spanish → English genre/keyword translations (shared with archiveSearch logic)
 const GENRE_MAP: Record<string, string> = {
   "acción": "action", "accion": "action",
   "comedia": "comedy", "comedias": "comedy",
@@ -44,6 +43,28 @@ const GENRE_MAP: Record<string, string> = {
 
 const FILLER_RE = /\b(peliculas?|películas?|pelis?|de|del|en|las?|los?|un|una|el|la|quiero|ver|buscar|busco|hay|buenas?|mejores?|tipo|genero|género|año|años|anos?|busca|cine|sobre|con|para|que|es|son|muy|más|mas|todo|todos)\b/gi;
 
+// Titles that indicate the video is NOT a full movie
+const JUNK_TITLE_RE = /\b(resumen|reseña|resena|critica|crítica|hablando|hablamos|opinión|opinion|tráiler|trailer|trailers|teaser|capitulo|capítulo|episodio|episode|temporada|parte\s+\d|part\s+\d|anuncio|spot|making\s+of|behind\s+the\s+scenes|entrevista|interview|análisis|analisis|review\b|clip\s+oficial|clip\s+final|escena\s+final|opening|fan\s+made|reaccion|reacción|resumiendo|explicando|doblaje|explicacion|explicación|noticias|news|vs\b)/i;
+
+/**
+ * Returns true if the title/duration combination looks like a full movie.
+ */
+function isLikelyFullMovie(title: string, duration: string): boolean {
+  if (JUNK_TITLE_RE.test(title)) return false;
+
+  // If we have a parseable duration, reject anything under 40 minutes
+  if (duration) {
+    const hMatch = duration.match(/(\d+)h/);
+    const mMatch = duration.match(/(\d+)m/);
+    const h = hMatch ? parseInt(hMatch[1], 10) : 0;
+    const m = mMatch ? parseInt(mMatch[1], 10) : 0;
+    const totalMin = h * 60 + m;
+    if (totalMin > 0 && totalMin < 40) return false;
+  }
+
+  return true;
+}
+
 function buildYouTubeQuery(raw: string): string {
   let q = raw.trim();
   q = q.replace(/ciencia ficcion/gi, "science fiction");
@@ -54,9 +75,14 @@ function buildYouTubeQuery(raw: string): string {
   }
   q = q.replace(FILLER_RE, " ").replace(/\s{2,}/g, " ").trim();
   if (!q || q.length < 2) q = raw.trim();
-  // Append "full movie" to bias results toward full films
-  if (!q.toLowerCase().includes("full movie") && !q.toLowerCase().includes("pelicula completa")) {
-    q = `${q} full movie`;
+  // Append Spanish full movie terms to bias results toward complete films in Spanish
+  const lower = q.toLowerCase();
+  if (
+    !lower.includes("pelicula completa") &&
+    !lower.includes("película completa") &&
+    !lower.includes("full movie")
+  ) {
+    q = `${q} película completa español`;
   }
   return q;
 }
@@ -111,7 +137,7 @@ router.get("/youtube/search", requireAdminAuth, async (req: Request, res: Respon
       q: smartQ,
       safeSearch: "strict",
       videoDuration: "long",
-      maxResults: "20",
+      maxResults: "25",
       key: apiKey,
     });
     if (pageToken) searchParams.set("pageToken", pageToken);
@@ -131,7 +157,6 @@ router.get("/youtube/search", requireAdminAuth, async (req: Request, res: Respon
 
     if (searchItems.length === 0) return res.json({ items: [], nextPageToken });
 
-    // Fetch duration for each video
     const videoIds = searchItems.map((i: any) => i.id?.videoId).filter(Boolean).join(",");
     const detailParams = new URLSearchParams({ part: "contentDetails", id: videoIds, key: apiKey });
     const detailRes = await fetch(`${YT_API}/videos?${detailParams}`, {
@@ -143,29 +168,30 @@ router.get("/youtube/search", requireAdminAuth, async (req: Request, res: Respon
       durationMap[v.id] = parseISODuration(v.contentDetails?.duration || "");
     }
 
-    const items = searchItems.map((item: any) => {
-      const videoId: string = item.id?.videoId || "";
-      const snippet = item.snippet || {};
-      const year = snippet.publishedAt ? new Date(snippet.publishedAt).getFullYear() : undefined;
-      return {
-        videoId,
-        title: sanitizeText(snippet.title || "", 300),
-        description: sanitizeText(snippet.description || "", 300),
-        thumbnail: snippet.thumbnails?.medium?.url || snippet.thumbnails?.default?.url || "",
-        channel: sanitizeText(snippet.channelTitle || "", 100),
-        year: year ? String(year) : undefined,
-        duration: durationMap[videoId] || "",
-        url: `https://www.youtube.com/watch?v=${videoId}`,
-      };
-    });
+    const items = searchItems
+      .map((item: any) => {
+        const videoId: string = item.id?.videoId || "";
+        const snippet = item.snippet || {};
+        const year = snippet.publishedAt ? new Date(snippet.publishedAt).getFullYear() : undefined;
+        const duration = durationMap[videoId] || "";
+        return {
+          videoId,
+          title: sanitizeText(snippet.title || "", 300),
+          description: sanitizeText(snippet.description || "", 300),
+          thumbnail: snippet.thumbnails?.medium?.url || snippet.thumbnails?.default?.url || "",
+          channel: sanitizeText(snippet.channelTitle || "", 100),
+          year: year ? String(year) : undefined,
+          duration,
+          url: `https://www.youtube.com/watch?v=${videoId}`,
+        };
+      })
+      .filter(item => isLikelyFullMovie(item.title, item.duration));
 
     res.json({ items, nextPageToken });
   } catch (e: any) {
     res.status(500).json({ error: e.message });
   }
 });
-
-// ── YouTube Video Info (oEmbed — no API key needed) ──────────────────────────
 
 router.get("/youtube/video-info", requireAdminAuth, async (req: Request, res: Response) => {
   const url = String(req.query.url || "").trim();
@@ -175,7 +201,6 @@ router.get("/youtube/video-info", requireAdminAuth, async (req: Request, res: Re
   if (!videoId) return res.status(400).json({ error: "URL de YouTube inválida. Usa youtube.com/watch?v=... o youtu.be/..." });
 
   try {
-    // oEmbed doesn't require an API key
     const oembedUrl = `https://www.youtube.com/oembed?url=${encodeURIComponent(url)}&format=json`;
     const oembedRes = await fetch(oembedUrl, { signal: AbortSignal.timeout(10000) });
     if (!oembedRes.ok) return res.status(400).json({ error: "No se pudo obtener información del video. Verifica que sea público." });
@@ -184,7 +209,6 @@ router.get("/youtube/video-info", requireAdminAuth, async (req: Request, res: Re
     let description: string | null = null;
     let year: string | null = null;
 
-    // If YOUTUBE_API_KEY is set, also fetch description & published date
     const apiKey = process.env.YOUTUBE_API_KEY;
     if (apiKey) {
       try {
@@ -250,14 +274,11 @@ router.post("/youtube/import", requireAdminAuth, async (req: Request, res: Respo
   }
 });
 
-// ── YouTube Playlist Importer ─────────────────────────────────────────────────
-
 function extractPlaylistId(url: string): string | null {
   const m = url.match(/[?&]list=([A-Za-z0-9_-]+)/);
   return m ? m[1] : null;
 }
 
-/** Fetch up to maxItems playlist video entries (handles pagination) */
 async function fetchPlaylistItems(playlistId: string, apiKey: string, maxItems = 200): Promise<Array<{ videoId: string; title: string; thumbnail: string; position: number }>> {
   const items: Array<{ videoId: string; title: string; thumbnail: string; position: number }> = [];
   let pageToken = "";
@@ -289,7 +310,6 @@ async function fetchPlaylistItems(playlistId: string, apiKey: string, maxItems =
   return items.sort((a, b) => a.position - b.position);
 }
 
-// Preview: return playlist info + video list without importing
 router.get("/youtube/playlist-preview", requireAdminAuth, async (req: Request, res: Response) => {
   const apiKey = process.env.YOUTUBE_API_KEY;
   if (!apiKey) return res.status(503).json({ error: "YOUTUBE_API_KEY no configurada", needsKey: true });
@@ -299,7 +319,6 @@ router.get("/youtube/playlist-preview", requireAdminAuth, async (req: Request, r
   if (!playlistId) return res.status(400).json({ error: "URL de playlist inválida. Debe contener ?list=..." });
 
   try {
-    // Fetch playlist metadata
     const metaParams = new URLSearchParams({ part: "snippet", id: playlistId, key: apiKey });
     const metaRes = await fetch(`${YT_API}/playlists?${metaParams}`, { signal: AbortSignal.timeout(10000) });
     if (!metaRes.ok) return res.status(500).json({ error: "Error al obtener información de la playlist" });
@@ -324,7 +343,6 @@ router.get("/youtube/playlist-preview", requireAdminAuth, async (req: Request, r
   }
 });
 
-// Import: create series + season + all episodes from playlist
 router.post("/youtube/import-playlist", requireAdminAuth, async (req: Request, res: Response) => {
   const apiKey = process.env.YOUTUBE_API_KEY;
   if (!apiKey) return res.status(503).json({ error: "YOUTUBE_API_KEY no configurada", needsKey: true });
@@ -337,7 +355,6 @@ router.post("/youtube/import-playlist", requireAdminAuth, async (req: Request, r
     const items = await fetchPlaylistItems(playlistId, apiKey, 200);
     if (items.length === 0) return res.status(400).json({ error: "La playlist está vacía o es privada" });
 
-    // Create series
     const [series] = await db.insert(seriesTable).values({
       title: sanitizeText(String(title), 500),
       description: description ? sanitizeText(String(description), 1000) : null,
@@ -348,14 +365,12 @@ router.post("/youtube/import-playlist", requireAdminAuth, async (req: Request, r
       year: year ? parseInt(String(year)) || null : null,
     }).returning();
 
-    // Create Season 1
     const [season] = await db.insert(seasonsTable).values({
       seriesId: series.id,
       seasonNumber: 1,
       title: "Temporada 1",
     }).returning();
 
-    // Create episodes
     for (let i = 0; i < items.length; i++) {
       const ep = items[i];
       await db.insert(episodesTable).values({
