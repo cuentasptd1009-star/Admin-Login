@@ -15,6 +15,13 @@
       "when": 1778001975312,
       "tag": "0001_series_movies_update",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1778935000000,
+      "tag": "0002_video_format",
+      "breakpoints": true
     }
   ]
 }
