@@ -83,6 +83,8 @@ export default function VodPlayerPage() {
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
   const [showNextEp, setShowNextEp] = useState(false);
+  const [nextEpFocused, setNextEpFocused] = useState(false);
+  const [nextEpCountdown, setNextEpCountdown] = useState(0);
   const [errorBtnIndex, setErrorBtnIndex] = useState(0);
 
   const showControlsTemporarily = useCallback(() => {
@@ -141,8 +143,15 @@ export default function VodPlayerPage() {
     const onTimeUpdate = () => {
       const t = video.currentTime;
       setCurrentTime(t);
-      if (nextEpisodeId && isFinite(video.duration) && video.duration > 30 && t / video.duration > 0.9) {
-        setShowNextEp(true);
+      if (nextEpisodeId && isFinite(video.duration) && video.duration > 30) {
+        const timeLeft = video.duration - t;
+        if (timeLeft <= 20) {
+          setNextEpCountdown(Math.ceil(timeLeft));
+          if (!showNextEp) {
+            setShowNextEp(true);
+            setNextEpFocused(true);
+          }
+        }
       }
       const now = Date.now();
       if (now - lastSaveRef.current > 5000) {
@@ -158,7 +167,7 @@ export default function VodPlayerPage() {
       }
     };
     const onEnded = () => {
-      if (nextEpisodeId) setShowNextEp(true);
+      if (nextEpisodeId) { setShowNextEp(true); setNextEpFocused(true); }
     };
     const onError = () => {
       if (destroyed) return;
@@ -357,11 +366,33 @@ export default function VodPlayerPage() {
         }
         return;
       }
-      switch (normalizeKey(e)) {
+      const key = normalizeKey(e);
+
+      // When next episode banner is focused, arrow keys control it
+      if (showNextEp && nextEpFocused && nextEpisodeId) {
+        switch (key) {
+          case 'Enter':
+          case 'ArrowRight':
+          case 'MediaFastForward':
+            e.preventDefault(); goNextEpisode(); return;
+          case 'ArrowLeft':
+          case 'Backspace':
+            e.preventDefault(); setNextEpFocused(false); showControlsTemporarily(); return;
+          case 'Escape':
+            e.preventDefault(); setNextEpFocused(false); setShowNextEp(false); showControlsTemporarily(); return;
+          default: break;
+        }
+      }
+
+      switch (key) {
         case ' ':
         case 'MediaPlayPause':
           e.preventDefault(); togglePlay(); showControlsTemporarily(); break;
-        case 'ArrowRight': e.preventDefault(); skip(e.shiftKey ? 30 : 10); showControlsTemporarily(); break;
+        case 'ArrowRight':
+          e.preventDefault();
+          if (showNextEp && nextEpisodeId) { setNextEpFocused(true); showControlsTemporarily(); }
+          else { skip(e.shiftKey ? 30 : 10); showControlsTemporarily(); }
+          break;
         case 'ArrowLeft': e.preventDefault(); skip(e.shiftKey ? -30 : -10); showControlsTemporarily(); break;
         case 'ArrowUp': e.preventDefault(); { const v = videoRef.current; if (v) v.volume = Math.min(1, v.volume + 0.1); } break;
         case 'ArrowDown': e.preventDefault(); { const v = videoRef.current; if (v) v.volume = Math.max(0, v.volume - 0.1); } break;
@@ -392,7 +423,7 @@ export default function VodPlayerPage() {
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [error, errorBtnIndex, showNextEp, nextEpisodeId, togglePlay, skip, toggleMute, toggleFullscreen, backUrl, setLocation, showControlsTemporarily]);
+  }, [error, errorBtnIndex, showNextEp, nextEpFocused, nextEpisodeId, togglePlay, skip, toggleMute, toggleFullscreen, backUrl, setLocation, showControlsTemporarily]);
 
   const handleRetry = () => {
     retryCountRef.current = 0;
@@ -527,15 +558,31 @@ export default function VodPlayerPage() {
       )}
 
       {showNextEp && nextEpisodeId && nextEpisodeUrl && (
-        <div className="absolute bottom-28 right-4 z-30 bg-black/85 backdrop-blur border border-white/30 rounded-xl px-4 py-3 flex items-center gap-3 shadow-2xl ring-2 ring-white/20">
+        <div
+          className={`absolute bottom-28 right-4 z-30 backdrop-blur rounded-xl px-4 py-3 flex items-center gap-3 shadow-2xl transition-all duration-200 ${
+            nextEpFocused
+              ? 'bg-black/95 border-2 border-primary ring-2 ring-primary/50 scale-105'
+              : 'bg-black/85 border border-white/30 ring-2 ring-white/20'
+          }`}
+        >
           <div className="text-sm text-white">
             <div className="text-white/50 text-xs mb-0.5">Siguiente episodio</div>
             <div className="font-medium truncate max-w-[180px]">{nextEpisodeTitle}</div>
-            <div className="text-white/30 text-[10px] mt-0.5">Enter para reproducir</div>
+            <div className={`text-[10px] mt-0.5 ${nextEpFocused ? 'text-primary font-semibold' : 'text-white/30'}`}>
+              {nextEpFocused
+                ? '► Enter / → para reproducir'
+                : nextEpCountdown > 0
+                  ? `En ${nextEpCountdown}s · Enter para reproducir`
+                  : 'Enter para reproducir'}
+            </div>
           </div>
           <button
             onClick={goNextEpisode}
-            className="flex items-center gap-1 px-3 py-1.5 bg-primary text-white rounded-lg text-xs font-semibold hover:bg-primary/90 transition-colors whitespace-nowrap"
+            className={`flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors whitespace-nowrap ${
+              nextEpFocused
+                ? 'bg-primary text-white scale-105 shadow-lg shadow-primary/40'
+                : 'bg-primary/70 text-white hover:bg-primary/90'
+            }`}
           >
             Reproducir <ChevronRight className="w-3.5 h-3.5" />
           </button>
