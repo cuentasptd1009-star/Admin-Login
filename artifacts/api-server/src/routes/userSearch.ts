@@ -70,6 +70,40 @@ const FILLER_RE = /\b(peliculas?|películas?|pelis?|de|del|en|las?|los?|un|una|e
 
 const ADULT_RE = /\b(xxx|porno?|pornog\w*|sexo?|sexual\w*|er[oó]tic[ao]?|adulto?|nsfw|hentai|nude|desnud[ao]|naked|putit[ao]?|obscen\w*|escort|prostitu\w*)\b/i;
 
+// Keywords that indicate the video is NOT a full movie
+const JUNK_TITLE_RE = /\b(tr[aá]iler|trailer|reseña|resumen|cr[ií]tica|rese[nñ]a|review|rese[nñ]as|top\s*\d+|top\s*ten|ranking|explicado|explicaci[oó]n|escenas|escena|capitulo|cap[ií]tulo|episodio|temporada|parte\s*[12]|clip|making\s*of|behind|entrevista|interview|hablando|opinión|opinion|analisis|an[aá]lisis|banda\s*sonora|soundtrack|ost\b|temas?|song|songs|music\s*video|lyric|lyrics|en\s*\d+\s*minutos?|en\s*\d+\s*segundos?|anuncio|avance|promo\b|promotional|react\w*|vlog|shorts?\b|resumen\s*en|min\s*resumen|teaser|featurette|deleted\s*scene|blooper|gag\s*reel|fan\s*made|fanmade|fan\s*film|parody|parodia|vs\b|comparaci[oó]n|comparacion|documental\s*sobre|podcast|gaming|gameplay|speedrun)\b/i;
+
+/**
+ * Parse YouTube text duration like "1:23:45" or "45:23" into total minutes.
+ * Returns -1 if unparseable.
+ */
+function parseDurationText(text: string): number {
+  if (!text) return -1;
+  const parts = text.trim().split(":").map(Number);
+  if (parts.some(isNaN)) return -1;
+  if (parts.length === 3) {
+    // H:MM:SS
+    return parts[0] * 60 + parts[1] + parts[2] / 60;
+  }
+  if (parts.length === 2) {
+    // MM:SS
+    return parts[0] + parts[1] / 60;
+  }
+  return -1;
+}
+
+/**
+ * Returns true if the video looks like a real full-length movie.
+ * Requires duration >= 60 minutes AND title doesn't contain junk keywords.
+ */
+function isLikelyFullMovie(title: string, durationText: string): boolean {
+  if (JUNK_TITLE_RE.test(title)) return false;
+  const minutes = parseDurationText(durationText);
+  // If we have a duration, it must be at least 60 minutes
+  if (minutes !== -1 && minutes < 60) return false;
+  return true;
+}
+
 function sanitizeText(str: string, maxLen = 500): string {
   return str
     .replace(/<[^>]+>/g, " ")
@@ -144,7 +178,7 @@ function cleanIdentifier(id: string): string {
   return id.replace(/^\/+/, "").trim();
 }
 
-async function youtubeInternalSearch(q: string, maxResults = 10): Promise<any[]> {
+async function youtubeInternalSearch(q: string, maxResults = 20): Promise<any[]> {
   const INNERTUBE_KEY = "AIzaSyAO_FJ2SlqU8Q4STEHLGCilw_Y9_11qcW8";
   const body = {
     context: {
@@ -187,7 +221,6 @@ async function youtubeInternalSearch(q: string, maxResults = 10): Promise<any[]>
       const channel: string = vr.ownerText?.runs?.[0]?.text ?? "";
       const thumb: string =
         vr.thumbnail?.thumbnails?.slice(-1)[0]?.url?.split("?")[0] ?? "";
-      // Parse duration from accessibility label or lengthText
       const durText: string = vr.lengthText?.simpleText ?? "";
       videos.push({ videoId, title, thumbnail: thumb, channel, duration: durText });
       if (videos.length >= maxResults) break;
@@ -206,10 +239,16 @@ router.get("/user-search/youtube", requireUserAuth, async (req: Request, res: Re
     const contentType = req.query.type === "series" ? "series" : "movie";
     const smartQ = buildYouTubeQuery(q, contentType);
 
-    const raw = await youtubeInternalSearch(smartQ, 10);
+    // Fetch more results than needed so we have enough after filtering
+    const raw = await youtubeInternalSearch(smartQ, 30);
     if (raw.length === 0) return res.json({ items: [] });
 
-    const items = raw.map((v) => ({
+    // For movies: filter to only real full-length films (60+ min, no junk titles)
+    const filtered = contentType === "movie"
+      ? raw.filter(v => isLikelyFullMovie(v.title, v.duration))
+      : raw;
+
+    const items = filtered.slice(0, 10).map((v) => ({
       videoId: v.videoId,
       title: sanitizeText(v.title, 200),
       thumbnail: v.thumbnail,
