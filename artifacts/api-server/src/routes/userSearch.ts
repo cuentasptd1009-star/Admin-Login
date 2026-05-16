@@ -4,13 +4,16 @@ import { db } from "@workspace/db";
 import { adminSessionsTable, sessionsTable, accessCodesTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
 
+// Accepts either a valid admin session token OR a valid active user session token
 async function requireAnyAuth(req: any, res: any, next: any) {
   const token = extractToken(req);
   if (!token) { res.status(401).json({ error: "Unauthorized" }); return; }
 
+  // Try admin session first
   const adminSessions = await db.select().from(adminSessionsTable).where(eq(adminSessionsTable.token, token)).limit(1);
   if (adminSessions[0]) { req.adminSession = adminSessions[0]; return next(); }
 
+  // Try user session
   const userSessions = await db.select().from(sessionsTable).where(eq(sessionsTable.token, token)).limit(1);
   if (userSessions[0]) {
     const codes = await db.select().from(accessCodesTable).where(eq(accessCodesTable.id, userSessions[0].codeId)).limit(1);
@@ -67,9 +70,6 @@ const FILLER_RE = /\b(peliculas?|películas?|pelis?|de|del|en|las?|los?|un|una|e
 
 const ADULT_RE = /\b(xxx|porno?|pornog\w*|sexo?|sexual\w*|er[oó]tic[ao]?|adulto?|nsfw|hentai|nude|desnud[ao]|naked|putit[ao]?|obscen\w*|escort|prostitu\w*)\b/i;
 
-// Titles that indicate the video is NOT a full movie
-const JUNK_TITLE_RE = /\b(resumen|reseña|resena|critica|crítica|hablando|hablamos|opinión|opinion|tráiler|trailer|trailers|teaser|capitulo|capítulo|episodio|episode|temporada|parte\s+\d|part\s+\d|anuncio|spot|making\s+of|behind\s+the\s+scenes|entrevista|interview|análisis|analisis|review\b|clip\s+oficial|clip\s+final|escena\s+final|opening|fan\s+made|reaccion|reacción|resumiendo|explicando|doblaje|doblado\s+al|explicacion|explicación|noticias|news|vs\b)/i;
-
 function sanitizeText(str: string, maxLen = 500): string {
   return str
     .replace(/<[^>]+>/g, " ")
@@ -77,27 +77,6 @@ function sanitizeText(str: string, maxLen = 500): string {
     .replace(/\s{2,}/g, " ")
     .trim()
     .slice(0, maxLen);
-}
-
-/**
- * Returns true if the title/duration combination looks like a full movie.
- * Filters out reviews, trailers, episodes, clips, etc.
- */
-function isLikelyFullMovie(title: string, duration: string): boolean {
-  if (JUNK_TITLE_RE.test(title)) return false;
-
-  // If we have a parseable duration, reject anything under 40 minutes
-  if (duration) {
-    const hMatch = duration.match(/(\d+)h/);
-    const mMatch = duration.match(/(\d+)m/);
-    const h = hMatch ? parseInt(hMatch[1], 10) : 0;
-    const m = mMatch ? parseInt(mMatch[1], 10) : 0;
-    const totalMin = h * 60 + m;
-    // Only filter if we got a non-zero duration reading
-    if (totalMin > 0 && totalMin < 40) return false;
-  }
-
-  return true;
 }
 
 function buildYouTubeQuery(raw: string, type: "movie" | "series" = "movie"): string {
@@ -115,14 +94,8 @@ function buildYouTubeQuery(raw: string, type: "movie" | "series" = "movie"): str
       q = `${q} full episodes`;
     }
   } else {
-    // Always bias toward Spanish full movies
-    const lower = q.toLowerCase();
-    if (
-      !lower.includes("pelicula completa") &&
-      !lower.includes("película completa") &&
-      !lower.includes("full movie")
-    ) {
-      q = `${q} película completa español`;
+    if (!q.toLowerCase().includes("full movie") && !q.toLowerCase().includes("pelicula completa")) {
+      q = `${q} full movie`;
     }
   }
   return q;
@@ -183,7 +156,7 @@ async function youtubeInternalSearch(q: string, maxResults = 10): Promise<any[]>
       },
     },
     query: q,
-    params: "EgIQAQ%3D%3D",
+    params: "EgIQAQ%3D%3D", // filter: videos only
   };
   const res = await fetch(
     `https://www.youtube.com/youtubei/v1/search?key=${INNERTUBE_KEY}&prettyPrint=false`,
@@ -197,6 +170,7 @@ async function youtubeInternalSearch(q: string, maxResults = 10): Promise<any[]>
   if (!res.ok) return [];
   const data = await res.json();
 
+  // Walk the renderer tree to extract video items
   const contents: any[] =
     data?.contents?.twoColumnSearchResultsRenderer?.primaryContents
       ?.sectionListRenderer?.contents ?? [];
@@ -213,6 +187,7 @@ async function youtubeInternalSearch(q: string, maxResults = 10): Promise<any[]>
       const channel: string = vr.ownerText?.runs?.[0]?.text ?? "";
       const thumb: string =
         vr.thumbnail?.thumbnails?.slice(-1)[0]?.url?.split("?")[0] ?? "";
+      // Parse duration from accessibility label or lengthText
       const durText: string = vr.lengthText?.simpleText ?? "";
       videos.push({ videoId, title, thumbnail: thumb, channel, duration: durText });
       if (videos.length >= maxResults) break;
@@ -231,20 +206,16 @@ router.get("/user-search/youtube", requireUserAuth, async (req: Request, res: Re
     const contentType = req.query.type === "series" ? "series" : "movie";
     const smartQ = buildYouTubeQuery(q, contentType);
 
-    // Fetch more results than needed so we can filter down to real movies
-    const raw = await youtubeInternalSearch(smartQ, 20);
+    const raw = await youtubeInternalSearch(smartQ, 10);
     if (raw.length === 0) return res.json({ items: [] });
 
-    const items = raw
-      .filter(v => isLikelyFullMovie(v.title, v.duration))
-      .slice(0, 10)
-      .map((v) => ({
-        videoId: v.videoId,
-        title: sanitizeText(v.title, 200),
-        thumbnail: v.thumbnail,
-        channel: sanitizeText(v.channel, 80),
-        duration: v.duration,
-      }));
+    const items = raw.map((v) => ({
+      videoId: v.videoId,
+      title: sanitizeText(v.title, 200),
+      thumbnail: v.thumbnail,
+      channel: sanitizeText(v.channel, 80),
+      duration: v.duration,
+    }));
 
     res.json({ items });
   } catch {
@@ -252,30 +223,25 @@ router.get("/user-search/youtube", requireUserAuth, async (req: Request, res: Re
   }
 });
 
-// Admin-accessible YouTube search — applies full-movie query and filters
+// Admin-accessible YouTube search — direct query, no "full movie" transformation
 router.get("/admin/youtube-search", requireAnyAuth, async (req: Request, res: Response) => {
   try {
     const q = String(req.query.q || "").trim();
     if (!q || q.length < 2) return res.json({ items: [] });
     if (ADULT_RE.test(q)) return res.json({ items: [] });
 
-    // Apply the same full-movie query transformation for admin search
-    const smartQ = buildYouTubeQuery(q, "movie");
-
-    // Fetch more to compensate for filtering
-    const raw = await youtubeInternalSearch(smartQ, 30);
+    // Admin search: use the query exactly as typed (no "full movie" appended)
+    // so admin can find specific titles to import
+    const raw = await youtubeInternalSearch(q, 20);
     if (raw.length === 0) return res.json({ items: [] });
 
-    const items = raw
-      .filter(v => isLikelyFullMovie(v.title, v.duration))
-      .slice(0, 20)
-      .map((v) => ({
-        videoId: v.videoId,
-        title: sanitizeText(v.title, 200),
-        thumbnail: v.thumbnail,
-        channel: sanitizeText(v.channel, 80),
-        duration: v.duration,
-      }));
+    const items = raw.map((v) => ({
+      videoId: v.videoId,
+      title: sanitizeText(v.title, 200),
+      thumbnail: v.thumbnail,
+      channel: sanitizeText(v.channel, 80),
+      duration: v.duration,
+    }));
 
     res.json({ items });
   } catch {
