@@ -4694,9 +4694,10 @@ function SeriesManager() {
       });
       if (!snr.ok) { toast({ variant: 'destructive', title: 'Error al crear temporada' }); setYtManualCreating(false); return; }
       const season = await snr.json();
+      let epFailed = 0;
       for (let i = 0; i < validLinks.length; i++) {
         const link = validLinks[i];
-        await fetch(`${BASE_API}/api/episodes`, {
+        const er = await fetch(`${BASE_API}/api/episodes`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${getAdminToken()}` },
           body: JSON.stringify({
@@ -4707,8 +4708,13 @@ function SeriesManager() {
             videoFormat: 'youtube',
           }),
         });
+        if (!er.ok) epFailed++;
       }
-      toast({ title: `Serie "${ytManualTitle.trim()}" creada con ${validLinks.length} episodio(s)` });
+      if (epFailed > 0) {
+        toast({ variant: 'destructive', title: `${epFailed} episodio(s) no se pudieron crear` });
+      } else {
+        toast({ title: `Serie "${ytManualTitle.trim()}" creada con ${validLinks.length} episodio(s)` });
+      }
       setShowYtManual(false);
       setYtManualTitle(''); setYtManualCategory('');
       setYtManualLinks([{ url: '', title: '' }]);
