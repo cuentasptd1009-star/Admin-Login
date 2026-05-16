@@ -4500,6 +4500,9 @@ function SeriesManager() {
   const [ytManualCategory, setYtManualCategory] = useState('');
   const [ytManualLinks, setYtManualLinks] = useState<Array<{ url: string; title: string }>>([{ url: '', title: '' }]);
   const [ytManualCreating, setYtManualCreating] = useState(false);
+  const [showYtBulk, setShowYtBulk] = useState<{ seriesId: number; seasonId: number; seasonEpCount: number } | null>(null);
+  const [ytBulkText, setYtBulkText] = useState('');
+  const [ytBulkAdding, setYtBulkAdding] = useState(false);
 
   const form0: Partial<SeriesRow> = { title: '', description: '', poster: '', banner: '', category: '', genre: '', year: undefined, featured: false, hidden: false };
   const [createForm, setCreateForm] = useState<Partial<SeriesRow>>(form0);
@@ -4638,7 +4641,36 @@ function SeriesManager() {
   const handleDeleteEpisode = async (epId: number, seriesId: number) => {
     if (!confirm('¿Eliminar este episodio?')) return;
     await fetch(`${BASE_API}/api/episodes/${epId}`, { method: 'DELETE', headers: { Authorization: `Bearer ${getAdminToken()}` } });
-    toast({ title: 'Episodio eliminado' }); loadExpanded(seriesId);
+  };
+
+  const handleYtBulkAdd = async () => {
+    if (!showYtBulk) return;
+    const urls = ytBulkText.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+    if (urls.length === 0) { toast({ variant: 'destructive', title: 'Pega al menos un enlace de YouTube' }); return; }
+    setYtBulkAdding(true);
+    let ok = 0; let fail = 0;
+    const startNum = showYtBulk.seasonEpCount + 1;
+    for (let i = 0; i < urls.length; i++) {
+      const er = await fetch(`${BASE_API}/api/episodes`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${getAdminToken()}` },
+        body: JSON.stringify({
+          seriesId: showYtBulk.seriesId,
+          seasonId: showYtBulk.seasonId,
+          episodeNumber: startNum + i,
+          title: `Episodio ${startNum + i}`,
+          filePath: urls[i],
+          videoFormat: 'youtube',
+        }),
+      });
+      if (er.ok) ok++; else fail++;
+    }
+    if (fail > 0) toast({ variant: 'destructive', title: `${fail} episodio(s) fallaron`, description: `${ok} agregados correctamente` });
+    else toast({ title: `${ok} episodio(s) agregados` });
+    setShowYtBulk(null);
+    setYtBulkText('');
+    refresh();
+    setYtBulkAdding(false);
   };
 
   const handleYtPreview = async () => {
@@ -5026,10 +5058,30 @@ function SeriesManager() {
                       <div className="flex items-center justify-between gap-2 p-2.5 bg-card">
                         <p className="text-sm font-medium">{season.title || `Temporada ${season.seasonNumber}`} <span className="text-xs text-muted-foreground font-normal">({season.episodes.length} ep.)</span></p>
                         <div className="flex gap-1">
-                          <Button size="sm" variant="ghost" className="h-7 text-xs gap-1 px-2" onClick={() => setShowEpForm({ seriesId: series.id, seasonId: season.id })}><Plus className="w-3 h-3" /> Episodio</Button>
+                          <Button size="sm" variant="ghost" className="h-7 text-xs gap-1 px-2" onClick={() => { setShowYtBulk({ seriesId: series.id, seasonId: season.id, seasonEpCount: season.episodes.length }); setYtBulkText(''); setShowEpForm(null); }}><Youtube className="w-3 h-3 text-red-500" /> YouTube</Button>
+                          <Button size="sm" variant="ghost" className="h-7 text-xs gap-1 px-2" onClick={() => { setShowEpForm({ seriesId: series.id, seasonId: season.id }); setShowYtBulk(null); }}><Plus className="w-3 h-3" /> Episodio</Button>
                           <Button size="sm" variant="ghost" className="h-7 w-7 p-0 text-destructive hover:text-destructive" onClick={() => handleDeleteSeason(season.id, series.id)}><Trash2 className="w-3.5 h-3.5" /></Button>
                         </div>
                       </div>
+                      {showYtBulk?.seasonId === season.id && (
+                        <div className="p-3 border-t border-border bg-background/60 space-y-2">
+                          <p className="text-xs font-medium text-red-500">Agregar episodios YouTube en masa</p>
+                          <p className="text-[10px] text-muted-foreground">Pega un enlace de YouTube por línea. Se agregarán como episodios continuando desde el E{season.episodes.length + 1}.</p>
+                          <textarea
+                            className="w-full bg-background border border-border rounded text-xs p-2 h-28 resize-none font-mono"
+                            placeholder={"https://youtu.be/abc123\nhttps://youtu.be/def456\nhttps://youtu.be/ghi789"}
+                            value={ytBulkText}
+                            onChange={e => setYtBulkText(e.target.value)}
+                          />
+                          <div className="flex gap-2">
+                            <Button size="sm" onClick={handleYtBulkAdd} disabled={ytBulkAdding || !ytBulkText.trim()} className="h-8 text-xs bg-red-600 hover:bg-red-700">
+                              {ytBulkAdding ? <Loader2 className="w-3 h-3 animate-spin mr-1" /> : null}
+                              Agregar {ytBulkText.split('\n').filter(l => l.trim()).length} ep.
+                            </Button>
+                            <Button size="sm" variant="ghost" onClick={() => setShowYtBulk(null)} className="h-8 text-xs">Cancelar</Button>
+                          </div>
+                        </div>
+                      )}
                       {showEpForm?.seasonId === season.id && (
                         <div className="p-3 border-t border-border bg-background/60 space-y-2">
                           <p className="text-xs font-medium">Nuevo episodio</p>
