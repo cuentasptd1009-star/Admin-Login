@@ -165,6 +165,57 @@ router.get("/youtube/search", requireAdminAuth, async (req: Request, res: Respon
   }
 });
 
+// ── YouTube Video Info (oEmbed — no API key needed) ──────────────────────────
+
+router.get("/youtube/video-info", requireAdminAuth, async (req: Request, res: Response) => {
+  const url = String(req.query.url || "").trim();
+  if (!url) return res.status(400).json({ error: "url requerida" });
+
+  const videoId = extractYouTubeId(url);
+  if (!videoId) return res.status(400).json({ error: "URL de YouTube inválida. Usa youtube.com/watch?v=... o youtu.be/..." });
+
+  try {
+    // oEmbed doesn't require an API key
+    const oembedUrl = `https://www.youtube.com/oembed?url=${encodeURIComponent(url)}&format=json`;
+    const oembedRes = await fetch(oembedUrl, { signal: AbortSignal.timeout(10000) });
+    if (!oembedRes.ok) return res.status(400).json({ error: "No se pudo obtener información del video. Verifica que sea público." });
+    const oembed = await oembedRes.json() as any;
+
+    let description: string | null = null;
+    let year: string | null = null;
+
+    // If YOUTUBE_API_KEY is set, also fetch description & published date
+    const apiKey = process.env.YOUTUBE_API_KEY;
+    if (apiKey) {
+      try {
+        const detailParams = new URLSearchParams({ part: "snippet", id: videoId, key: apiKey });
+        const detailRes = await fetch(`${YT_API}/videos?${detailParams}`, { signal: AbortSignal.timeout(10000) });
+        if (detailRes.ok) {
+          const detailData = await detailRes.json() as any;
+          const snippet = detailData.items?.[0]?.snippet;
+          if (snippet) {
+            description = sanitizeText(snippet.description || "", 500) || null;
+            year = snippet.publishedAt ? String(new Date(snippet.publishedAt).getFullYear()) : null;
+          }
+        }
+      } catch { /* ignore */ }
+    }
+
+    res.json({
+      videoId,
+      title: sanitizeText(oembed.title || "", 300),
+      thumbnail: `https://img.youtube.com/vi/${videoId}/mqdefault.jpg`,
+      thumbnailHQ: `https://img.youtube.com/vi/${videoId}/hqdefault.jpg`,
+      channel: sanitizeText(oembed.author_name || "", 100),
+      description,
+      year,
+      url: `https://www.youtube.com/watch?v=${videoId}`,
+    });
+  } catch (e: any) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 router.post("/youtube/import", requireAdminAuth, async (req: Request, res: Response) => {
   try {
     const { videoId, title, description, year, category, thumbnail } = req.body;

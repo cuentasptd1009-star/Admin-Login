@@ -73,8 +73,8 @@ export function YouTubePlayerPage({ videoId, title, onBack, isFav, onFavToggle, 
         const d = yt.getDuration?.() ?? 0;
         setCurrentTime(t);
         if (d > 0) setDuration(d);
-        // Show next episode button 10 seconds before the end
-        if (nextEpisodeId && d > 30 && d - t <= 10 && t > 0) {
+        // Show next episode button 20 seconds before the end
+        if (nextEpisodeId && d > 30 && d - t <= 20 && t > 0) {
           setShowNextEp(true);
         }
         // Save progress every 5 seconds
@@ -461,6 +461,17 @@ export function YouTubePlayerPage({ videoId, title, onBack, isFav, onFavToggle, 
             >
               <SkipForward className="w-5 h-5" />
             </button>
+
+            {onNextEpisode && nextEpisodeId && (
+              <button
+                onClick={e => { e.stopPropagation(); onNextEpisode(); }}
+                className={`flex items-center gap-1.5 px-3 py-2.5 rounded-xl text-xs font-semibold transition-all ${showNextEp ? 'bg-red-600 text-white ring-2 ring-red-400/60 hover:bg-red-500' : 'bg-black/50 backdrop-blur border border-white/15 text-white hover:bg-red-600/80'}`}
+                title="Siguiente episodio"
+              >
+                <ChevronRight className="w-4 h-4" />
+                <span className="hidden sm:inline">Siguiente</span>
+              </button>
+            )}
 
             <button
               onClick={toggleFullscreen}

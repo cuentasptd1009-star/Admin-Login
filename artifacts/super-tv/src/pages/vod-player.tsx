@@ -557,7 +557,7 @@ export default function VodPlayerPage() {
         </div>
       )}
 
-      {showNextEp && nextEpisodeId && nextEpisodeUrl && (
+      {showNextEp && nextEpisodeId && (
         <div
           className={`absolute bottom-28 right-4 z-30 backdrop-blur rounded-xl px-4 py-3 flex items-center gap-3 shadow-2xl transition-all duration-200 ${
             nextEpFocused
@@ -656,6 +656,21 @@ export default function VodPlayerPage() {
             >
               <SkipForward className="w-4 h-4 sm:w-5 sm:h-5" />
             </button>
+
+            {nextEpisodeId && (
+              <button
+                onClick={goNextEpisode}
+                className={`flex items-center gap-1.5 px-3 py-2 rounded-full text-xs font-semibold transition-all ${
+                  nextEpFocused
+                    ? 'bg-primary text-white ring-2 ring-white/50 scale-105'
+                    : 'bg-primary/80 text-white hover:bg-primary'
+                }`}
+                title="Siguiente episodio"
+              >
+                <ChevronRight className="w-4 h-4" />
+                <span className="hidden sm:inline">Siguiente</span>
+              </button>
+            )}
 
             <div className="flex items-center gap-1.5 sm:gap-2 bg-black/40 rounded-full px-2.5 sm:px-3 py-1.5 sm:py-2 backdrop-blur">
               <button onClick={toggleMute} className="p-1 sm:p-1.5 text-white">

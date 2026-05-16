@@ -2455,6 +2455,56 @@ function MoviesManager() {
   const [youtubeImported, setYoutubeImported] = useState<Set<string>>(new Set());
   const [youtubeNeedsKey, setYoutubeNeedsKey] = useState(false);
 
+  // YouTube URL import (single video → movie)
+  const [showYtUrl, setShowYtUrl] = useState(false);
+  const [ytUrlInput, setYtUrlInput] = useState('');
+  const [ytUrlLoading, setYtUrlLoading] = useState(false);
+  const [ytUrlError, setYtUrlError] = useState('');
+  const [ytUrlPreview, setYtUrlPreview] = useState<{ videoId: string; title: string; thumbnail: string; thumbnailHQ: string; channel: string; description: string | null; year: string | null; url: string } | null>(null);
+  const [ytUrlCategory, setYtUrlCategory] = useState('');
+  const [ytUrlImporting, setYtUrlImporting] = useState(false);
+  const [ytUrlImported, setYtUrlImported] = useState(false);
+
+  const fetchYtUrlInfo = async (url: string) => {
+    if (!url.trim()) return;
+    setYtUrlLoading(true); setYtUrlError(''); setYtUrlPreview(null); setYtUrlImported(false);
+    try {
+      const token = getToken('admin');
+      const r = await fetch(`${BASE_URL}/api/youtube/video-info?url=${encodeURIComponent(url.trim())}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const data = await r.json();
+      if (!r.ok) throw new Error(data.error || 'Error al obtener info del video');
+      setYtUrlPreview(data);
+    } catch (e: any) { setYtUrlError(e.message); }
+    finally { setYtUrlLoading(false); }
+  };
+
+  const importYtUrl = async () => {
+    if (!ytUrlPreview) return;
+    setYtUrlImporting(true);
+    try {
+      const token = getToken('admin');
+      const r = await fetch(`${BASE_URL}/api/youtube/import`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({
+          videoId: ytUrlPreview.videoId,
+          title: ytUrlPreview.title,
+          description: ytUrlPreview.description,
+          year: ytUrlPreview.year,
+          thumbnail: ytUrlPreview.thumbnailHQ || ytUrlPreview.thumbnail,
+          category: ytUrlCategory || undefined,
+        }),
+      });
+      const data = await r.json();
+      if (!r.ok) throw new Error(data.error || 'Error al importar');
+      setYtUrlImported(true);
+      setYtUrlPreview(null); setYtUrlInput(''); setYtUrlCategory('');
+    } catch (e: any) { setYtUrlError(e.message); }
+    finally { setYtUrlImporting(false); }
+  };
+
   const archiveSearch = async (page = 1) => {
     if (!archiveQuery.trim()) return;
     setArchiveLoading(true);
@@ -2881,6 +2931,9 @@ function MoviesManager() {
             <Button size="sm" variant="outline" onClick={() => { setShowYoutube(true); setYoutubeResults([]); setYoutubeQuery(''); setYoutubeImported(new Set()); setYoutubeError(''); setYoutubeNextToken(''); setYoutubePrevTokens([]); setYoutubePage(1); }}>
               <Youtube className="w-4 h-4 mr-2" />YouTube
             </Button>
+            <Button size="sm" variant="outline" onClick={() => { setShowYtUrl(true); setYtUrlInput(''); setYtUrlPreview(null); setYtUrlError(''); setYtUrlImported(false); }}>
+              <Link2 className="w-4 h-4 mr-2" />URL YouTube
+            </Button>
             <Button size="sm" onClick={() => setShowForm(!showForm)}><Plus className="w-4 h-4 mr-2" />Nueva Película</Button>
           </>}
           {moviesList.length > 1 && (
@@ -2934,6 +2987,81 @@ function MoviesManager() {
         onClose={() => setShowSmartImport(false)}
         onImported={() => qc.invalidateQueries({ queryKey: getListMoviesQueryKey() })}
       />
+
+      {/* YouTube URL import dialog */}
+      <Dialog open={showYtUrl} onOpenChange={o => !o && setShowYtUrl(false)}>
+        <DialogContent className="bg-card border-border max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Youtube className="w-5 h-5 text-red-500" />
+              Importar desde URL de YouTube
+            </DialogTitle>
+          </DialogHeader>
+
+          <div className="space-y-3">
+            <div className="flex gap-2">
+              <Input
+                placeholder="https://youtube.com/watch?v=..."
+                value={ytUrlInput}
+                onChange={e => setYtUrlInput(e.target.value)}
+                onKeyDown={e => e.key === 'Enter' && fetchYtUrlInfo(ytUrlInput)}
+                className="flex-1"
+              />
+              <Button onClick={() => fetchYtUrlInfo(ytUrlInput)} disabled={ytUrlLoading || !ytUrlInput.trim()} size="sm">
+                {ytUrlLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Buscar'}
+              </Button>
+            </div>
+
+            {ytUrlError && (
+              <p className="text-xs text-red-400 bg-red-400/10 border border-red-400/20 rounded-lg px-3 py-2">{ytUrlError}</p>
+            )}
+
+            {ytUrlImported && (
+              <div className="text-xs text-green-400 bg-green-400/10 border border-green-400/20 rounded-lg px-3 py-2 flex items-center gap-2">
+                <span>¡Película importada con éxito!</span>
+                <button className="underline" onClick={() => { setYtUrlImported(false); setYtUrlInput(''); setYtUrlPreview(null); }}>Importar otra</button>
+              </div>
+            )}
+
+            {ytUrlPreview && (
+              <div className="space-y-3">
+                <div className="flex gap-3 p-3 rounded-lg border border-border bg-background">
+                  <img
+                    src={ytUrlPreview.thumbnail}
+                    alt=""
+                    className="w-28 h-16 object-cover rounded-md flex-shrink-0 bg-muted"
+                    onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }}
+                  />
+                  <div className="flex-1 min-w-0 space-y-1">
+                    <p className="text-sm font-semibold leading-snug line-clamp-2">{ytUrlPreview.title}</p>
+                    <p className="text-xs text-muted-foreground">{ytUrlPreview.channel}{ytUrlPreview.year ? ` · ${ytUrlPreview.year}` : ''}</p>
+                    {ytUrlPreview.description && (
+                      <p className="text-xs text-muted-foreground line-clamp-2">{ytUrlPreview.description}</p>
+                    )}
+                  </div>
+                </div>
+                <Input
+                  placeholder="Categoría (opcional)"
+                  value={ytUrlCategory}
+                  onChange={e => setYtUrlCategory(e.target.value)}
+                />
+                <div className="flex gap-2">
+                  <Button onClick={importYtUrl} disabled={ytUrlImporting} className="flex-1">
+                    {ytUrlImporting ? <><Loader2 className="w-4 h-4 animate-spin mr-2" />Importando...</> : 'Importar película'}
+                  </Button>
+                  <Button variant="outline" onClick={() => setShowYtUrl(false)}>Cancelar</Button>
+                </div>
+              </div>
+            )}
+
+            {!ytUrlPreview && !ytUrlLoading && !ytUrlError && !ytUrlImported && (
+              <p className="text-xs text-muted-foreground text-center py-2">
+                Pega un enlace de YouTube y pulsa Buscar para obtener la información automáticamente.
+              </p>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={showFolderPreview} onOpenChange={o => !o && setShowFolderPreview(false)}>
         <DialogContent className="bg-card border-border max-w-4xl max-h-[90vh] flex flex-col">
