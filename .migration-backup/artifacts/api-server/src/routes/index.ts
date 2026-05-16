@@ -1,0 +1,36 @@
+import { Router, type IRouter } from "express";
+import healthRouter from "./health.js";
+import authRouter from "./auth.js";
+import channelsRouter from "./channels.js";
+import moviesRouter from "./movies.js";
+import codesRouter from "./codes.js";
+import subadminsRouter from "./subadmins.js";
+import packagesRouter from "./packages.js";
+import adminRouter from "./admin.js";
+import storageRouter from "./storage.js";
+import avatarsRouter from "./avatars.js";
+import settingsRouter from "./settings.js";
+import subadminSettingsRouter from "./subadmin-settings.js";
+import whatsappAlertsRouter from "./whatsapp-alerts.js";
+import seriesRouter from "./series.js";
+import teraboxRouter from "./terabox.js";
+
+const router: IRouter = Router();
+
+router.use(healthRouter);
+router.use(authRouter);
+router.use(channelsRouter);
+router.use(moviesRouter);
+router.use(seriesRouter);
+router.use(codesRouter);
+router.use(subadminsRouter);
+router.use(packagesRouter);
+router.use(adminRouter);
+router.use(storageRouter);
+router.use(avatarsRouter);
+router.use(settingsRouter);
+router.use(subadminSettingsRouter);
+router.use(whatsappAlertsRouter);
+router.use(teraboxRouter);
+
+export default router;

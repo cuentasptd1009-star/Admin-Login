@@ -1,0 +1,3405 @@
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import { useLocation } from 'wouter';
+import { useQueryClient } from '@tanstack/react-query';
+import {
+  useGetMe, getGetMeQueryKey, useAdminLogin,
+  useGetAdminStats, getGetAdminStatsQueryKey,
+  useGetWhatsappAlerts, getGetWhatsappAlertsQueryKey, useDismissWhatsappAlerts,
+  useListCodes, getListCodesQueryKey, useCreateCode, useDeleteCode, useAdjustCodeTime, useUpdateCode,
+  useListChannels, getListChannelsQueryKey, useCreateChannel, useUpdateChannel, useDeleteChannel, useImportChannels,
+  useListMovies, getListMoviesQueryKey, useCreateMovie, useUpdateMovie, useDeleteMovie,
+  useListSubadmins, getListSubadminsQueryKey, useCreateSubadmin, useUpdateSubadmin, useDeleteSubadmin, useAddSubadminBalance,
+  useListPackages, getListPackagesQueryKey, useCreatePackage, useUpdatePackage, useDeletePackage,
+  useListAvatars, getListAvatarsQueryKey, useCreateAvatar, useDeleteAvatar,
+  useAdminChangePassword,
+  useListChannelCategories,
+} from '@workspace/api-client-react';
+import type { AdminStats } from '@workspace/api-client-react';
+import { getToken, setToken, clearTokens } from '@/lib/auth';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
+import {
+  Users, Tv, Film, Key, Package as PackageIcon, LogOut, Plus, Trash2, Pencil,
+  Wifi, Loader2, CheckCircle2, XCircle, Clock, Upload, FolderOpen, Copy, GripVertical, ArrowUpDown, Eye, EyeOff, UserCircle2, Settings, RotateCcw, Search, X, Download, Tag,
+  Activity, Signal, AlertTriangle, BarChart2, MonitorPlay, RefreshCw, Tv2, ChevronDown, ChevronRight, Globe
+} from 'lucide-react';
+import { useToast } from '@/hooks/use-toast';
+import logo from '@assets/imagen_1777670460131.png';
+import { DndContext, closestCenter, PointerSensor, TouchSensor, useSensor, useSensors } from '@dnd-kit/core';
+import type { DragEndEvent } from '@dnd-kit/core';
+import { SortableContext, verticalListSortingStrategy, useSortable, arrayMove } from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
+
+const BASE_URL = (import.meta.env.VITE_API_URL || import.meta.env.BASE_URL || '').replace(/\/+$/, '');
+
+export default function AdminPanel() {
+  const [, setLocation] = useLocation();
+  const { toast } = useToast();
+
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
+  const [isLoggingIn, setIsLoggingIn] = useState(false);
+
+  const loginMutation = useAdminLogin();
+
+  const { data: session, isLoading: sessionLoading, error: sessionError } = useGetMe({
+    query: { queryKey: getGetMeQueryKey(), retry: false },
+  });
+
+  useEffect(() => {
+    if (sessionError) {
+    } else if (session && session.type === 'subadmin') {
+      setLocation('/subadmin');
+    }
+  }, [session, sessionError, setLocation]);
+
+  const handleLogin = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!username || !password) return;
+    setIsLoggingIn(true);
+    loginMutation.mutate({ data: { username, password } }, {
+      onSuccess: (data) => {
+        setToken(data.token, 'admin');
+        if (data.role === 'admin') {
+          window.location.reload();
+        } else {
+          setLocation('/subadmin');
+        }
+      },
+      onError: () => {
+        toast({ variant: 'destructive', title: 'Error de inicio de sesión', description: 'Usuario o contraseña incorrectos' });
+        setIsLoggingIn(false);
+      }
+    });
+  };
+
+  const handleLogout = () => { clearTokens(); window.location.reload(); };
+
+  if (sessionLoading) {
+    return <div className="min-h-screen bg-background flex items-center justify-center text-primary">Cargando...</div>;
+  }
+
+  if (!session || session.type !== 'admin') {
+    return (
+      <div className="min-h-screen bg-background flex flex-col items-center justify-center p-4">
+        <Card className="w-full max-w-md bg-card border-border">
+          <CardHeader className="text-center space-y-4">
+            <div className="flex justify-center"><img src={logo} alt="Super TV" className="h-16" /></div>
+            <CardTitle className="text-2xl font-bold text-foreground">Panel de Administración</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <form onSubmit={handleLogin} className="space-y-4">
+              <Input placeholder="Usuario" value={username} onChange={(e) => setUsername(e.target.value)} className="bg-background" />
+              <Input type="password" placeholder="Contraseña" value={password} onChange={(e) => setPassword(e.target.value)} className="bg-background" />
+              <Button type="submit" className="w-full" disabled={isLoggingIn}>{isLoggingIn ? 'Entrando...' : 'Entrar'}</Button>
+            </form>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen bg-background text-foreground flex flex-col">
+      <header className="bg-card border-b border-border px-4 sm:px-6 py-3 sm:py-4 flex items-center justify-between sticky top-0 z-10">
+        <div className="flex items-center space-x-3 sm:space-x-4">
+          <img src={logo} alt="Super TV" className="h-7 sm:h-8" />
+          <span className="text-base sm:text-xl font-bold text-primary border-l border-border pl-3 sm:pl-4">Admin</span>
+        </div>
+        <div className="flex items-center space-x-3 sm:space-x-4">
+          <span className="text-xs sm:text-sm font-medium hidden sm:inline">{session.username}</span>
+          <Button variant="ghost" size="icon" onClick={handleLogout}><LogOut className="w-5 h-5" /></Button>
+        </div>
+      </header>
+      <main className="flex-1 p-3 sm:p-6 overflow-auto">
+        <AdminDashboard />
+      </main>
+    </div>
+  );
+}
+
+function AdminDashboard() {
+  const queryClient = useQueryClient();
+  const { data: stats, dataUpdatedAt } = useGetAdminStats({ query: { queryKey: getGetAdminStatsQueryKey(), refetchInterval: 30_000 } });
+
+  const lastRefreshed = dataUpdatedAt ? new Date(dataUpdatedAt).toLocaleTimeString() : '—';
+
+  const handleRefresh = () => {
+    queryClient.invalidateQueries({ queryKey: getGetAdminStatsQueryKey() });
+  };
+
+  return (
+    <div className="space-y-6 sm:space-y-8 max-w-7xl mx-auto">
+      <div className="grid gap-3 sm:gap-4 grid-cols-2 lg:grid-cols-4">
+        {[
+          { label: 'Códigos Activos', value: stats?.activeCodes || 0, sub: `de ${stats?.totalCodes || 0} totales`, icon: Key },
+          { label: 'Canales', value: stats?.totalChannels || 0, icon: Tv },
+          { label: 'Películas', value: stats?.totalMovies || 0, icon: Film },
+          { label: 'Subadmins', value: stats?.totalSubadmins || 0, icon: Users },
+        ].map(({ label, value, sub, icon: Icon }) => (
+          <Card key={label} className="bg-card border-border">
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-xs sm:text-sm font-medium">{label}</CardTitle>
+              <Icon className="h-3.5 w-3.5 sm:h-4 sm:w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-xl sm:text-2xl font-bold">{value}</div>
+              {sub && <p className="text-xs text-muted-foreground">{sub}</p>}
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+      <Tabs defaultValue="codes" className="w-full">
+        <TabsList className="bg-card border border-border w-full justify-start overflow-x-auto flex-nowrap">
+          {['activity', 'codes', 'channels', 'movies', 'series', 'subadmins', 'packages', 'avatars', 'settings'].map((v, i) => (
+            <TabsTrigger key={v} value={v} className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground text-xs sm:text-sm whitespace-nowrap">
+              {['Actividad', 'Códigos', 'Canales', 'Películas', 'Series', 'Subadmins', 'Paquetes', 'Avatares', 'Configuración'][i]}
+            </TabsTrigger>
+          ))}
+        </TabsList>
+        <div className="mt-4 sm:mt-6 bg-card border border-border rounded-lg p-3 sm:p-6">
+          <TabsContent value="activity"><ActivityPanel stats={stats} lastRefreshed={lastRefreshed} onRefresh={handleRefresh} /></TabsContent>
+          <TabsContent value="codes"><CodesManager /></TabsContent>
+          <TabsContent value="channels"><ChannelsManager /></TabsContent>
+          <TabsContent value="movies"><MoviesManager /></TabsContent>
+          <TabsContent value="series"><SeriesManager /></TabsContent>
+          <TabsContent value="subadmins"><SubadminsManager /></TabsContent>
+          <TabsContent value="packages"><PackagesManager /></TabsContent>
+          <TabsContent value="avatars"><AvatarsManager /></TabsContent>
+          <TabsContent value="settings"><SettingsManager /></TabsContent>
+        </div>
+      </Tabs>
+    </div>
+  );
+}
+
+function ActivityPanel({ stats, lastRefreshed, onRefresh }: {
+  stats: AdminStats | undefined;
+  lastRefreshed: string;
+  onRefresh: () => void;
+}) {
+  function timeAgo(iso: string | null | undefined): string {
+    if (!iso) return '—';
+    const diff = Math.floor((Date.now() - new Date(iso).getTime()) / 1000);
+    if (diff < 60) return `hace ${diff}s`;
+    if (diff < 3600) return `hace ${Math.floor(diff / 60)}m`;
+    if (diff < 86400) return `hace ${Math.floor(diff / 3600)}h`;
+    return `hace ${Math.floor(diff / 86400)}d`;
+  }
+
+  return (
+    <div className="space-y-6">
+      <div className="flex items-center justify-between">
+        <h2 className="text-base sm:text-lg font-semibold flex items-center gap-2">
+          <Activity className="w-4 h-4 text-primary" /> Actividad en tiempo real
+        </h2>
+        <div className="flex items-center gap-2 text-xs text-muted-foreground">
+          <span>Actualizado: {lastRefreshed}</span>
+          <Button variant="ghost" size="icon" className="h-7 w-7" onClick={onRefresh}>
+            <RefreshCw className="w-3.5 h-3.5" />
+          </Button>
+        </div>
+      </div>
+
+      <div className="grid gap-3 sm:gap-4 grid-cols-2 lg:grid-cols-4">
+        <Card className="bg-card border-border border-green-500/30">
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-xs sm:text-sm font-medium">Online ahora</CardTitle>
+            <Signal className="h-3.5 w-3.5 sm:h-4 sm:w-4 text-green-500" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-xl sm:text-2xl font-bold text-green-500">{stats?.onlineNow ?? 0}</div>
+            <p className="text-xs text-muted-foreground">últimos 2 min</p>
+          </CardContent>
+        </Card>
+        <Card className="bg-card border-border">
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-xs sm:text-sm font-medium">Activos recientes</CardTitle>
+            <Wifi className="h-3.5 w-3.5 sm:h-4 sm:w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-xl sm:text-2xl font-bold">{stats?.activeRecent ?? 0}</div>
+            <p className="text-xs text-muted-foreground">últimos 15 min</p>
+          </CardContent>
+        </Card>
+        <Card className="bg-card border-border border-yellow-500/30">
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-xs sm:text-sm font-medium">Vencen hoy</CardTitle>
+            <AlertTriangle className="h-3.5 w-3.5 sm:h-4 sm:w-4 text-yellow-500" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-xl sm:text-2xl font-bold text-yellow-500">{stats?.expiringToday ?? 0}</div>
+            <p className="text-xs text-muted-foreground">códigos activos</p>
+          </CardContent>
+        </Card>
+        <Card className="bg-card border-border">
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-xs sm:text-sm font-medium">Vencen en 7 días</CardTitle>
+            <Clock className="h-3.5 w-3.5 sm:h-4 sm:w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-xl sm:text-2xl font-bold">{stats?.expiringSoon ?? 0}</div>
+            <p className="text-xs text-muted-foreground">códigos activos</p>
+          </CardContent>
+        </Card>
+      </div>
+
+      <div className="grid gap-4 lg:grid-cols-2">
+        <Card className="bg-card border-border">
+          <CardHeader className="pb-3">
+            <CardTitle className="text-sm font-semibold flex items-center gap-2">
+              <MonitorPlay className="w-4 h-4 text-primary" /> Canales más vistos
+              <span className="text-xs font-normal text-muted-foreground ml-1">(desde último reinicio)</span>
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="p-0">
+            {!stats?.topChannels?.length ? (
+              <p className="text-xs text-muted-foreground px-4 pb-4">Sin datos aún. Los canales aparecen aquí cuando los usuarios los ven.</p>
+            ) : (
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="text-xs">#</TableHead>
+                    <TableHead className="text-xs">Canal</TableHead>
+                    <TableHead className="text-xs text-right">Vistas</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {stats.topChannels.map((ch, i) => (
+                    <TableRow key={ch.channelId}>
+                      <TableCell className="text-xs font-bold text-muted-foreground w-8">{i + 1}</TableCell>
+                      <TableCell className="text-xs font-medium">{ch.name}</TableCell>
+                      <TableCell className="text-xs text-right font-mono">{ch.views.toLocaleString()}</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card className="bg-card border-border">
+          <CardHeader className="pb-3">
+            <CardTitle className="text-sm font-semibold flex items-center gap-2">
+              <BarChart2 className="w-4 h-4 text-primary" /> Sesiones recientes
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="p-0">
+            {!stats?.recentSessions?.length ? (
+              <p className="text-xs text-muted-foreground px-4 pb-4">No hay sesiones registradas.</p>
+            ) : (
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="text-xs">Código</TableHead>
+                      <TableHead className="text-xs">Dispositivo</TableHead>
+                      <TableHead className="text-xs text-right">Última actividad</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {stats.recentSessions.map((s) => {
+                      const isOnline = s.lastActiveAt && (Date.now() - new Date(s.lastActiveAt).getTime()) < 2 * 60_000;
+                      return (
+                        <TableRow key={s.id}>
+                          <TableCell className="text-xs">
+                            <div className="flex items-center gap-1.5">
+                              <span className={`inline-block w-1.5 h-1.5 rounded-full flex-shrink-0 ${isOnline ? 'bg-green-500' : 'bg-muted-foreground/40'}`} />
+                              <span className="font-mono font-medium">{s.codeCode ?? '—'}</span>
+                              {s.codeName && <span className="text-muted-foreground truncate max-w-[80px]">{s.codeName}</span>}
+                            </div>
+                          </TableCell>
+                          <TableCell className="text-xs text-muted-foreground font-mono truncate max-w-[100px]">{s.deviceId.slice(0, 12)}</TableCell>
+                          <TableCell className="text-xs text-right text-muted-foreground">{timeAgo(s.lastActiveAt)}</TableCell>
+                        </TableRow>
+                      );
+                    })}
+                  </TableBody>
+                </Table>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      </div>
+
+      <WhatsappAlertsSection />
+    </div>
+  );
+}
+
+function WhatsappAlertsSection() {
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+  const { data, isLoading } = useGetWhatsappAlerts({
+    query: { queryKey: getGetWhatsappAlertsQueryKey(), refetchInterval: 60_000 },
+  });
+  const dismissMutation = useDismissWhatsappAlerts();
+
+  const alerts = data?.alerts ?? [];
+
+  function handleSendAndDismiss(subadminId: number, codeIds: number[], waUrl: string) {
+    window.open(waUrl, '_blank');
+    dismissMutation.mutate(
+      { data: { subadminId, codeIds } },
+      {
+        onSuccess: () => {
+          queryClient.invalidateQueries({ queryKey: getGetWhatsappAlertsQueryKey() });
+          toast({ title: 'Alerta marcada como enviada' });
+        },
+      }
+    );
+  }
+
+  function handleDismiss(subadminId: number, codeIds: number[]) {
+    dismissMutation.mutate(
+      { data: { subadminId, codeIds } },
+      {
+        onSuccess: () => {
+          queryClient.invalidateQueries({ queryKey: getGetWhatsappAlertsQueryKey() });
+          toast({ title: 'Alerta descartada' });
+        },
+      }
+    );
+  }
+
+  return (
+    <Card className="bg-card border-border border-green-600/20">
+      <CardHeader className="pb-3">
+        <CardTitle className="text-sm font-semibold flex items-center gap-2">
+          <span className="text-lg leading-none">📱</span> Alertas de WhatsApp
+          {alerts.length > 0 && (
+            <span className="ml-1 inline-flex items-center justify-center w-5 h-5 rounded-full bg-yellow-500 text-[10px] font-bold text-black">
+              {alerts.length}
+            </span>
+          )}
+        </CardTitle>
+        <p className="text-xs text-muted-foreground mt-0.5">
+          Subadmins con códigos que vencen en las próximas 48 horas
+        </p>
+      </CardHeader>
+      <CardContent>
+        {isLoading ? (
+          <div className="flex items-center gap-2 text-xs text-muted-foreground py-2">
+            <Loader2 className="w-3.5 h-3.5 animate-spin" /> Verificando alertas...
+          </div>
+        ) : alerts.length === 0 ? (
+          <div className="flex items-center gap-2 text-xs text-muted-foreground py-2">
+            <CheckCircle2 className="w-4 h-4 text-green-500" />
+            No hay alertas pendientes. Todos los códigos están en orden.
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {alerts.map((alert) => (
+              <div key={alert.subadminId} className="rounded-lg border border-yellow-500/30 bg-yellow-500/5 p-3 sm:p-4">
+                <div className="flex items-start justify-between gap-3 flex-wrap">
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="font-semibold text-sm">{alert.subadminUsername}</span>
+                      <span className="text-xs text-muted-foreground font-mono">{alert.whatsappNumber}</span>
+                    </div>
+                    <div className="mt-2 space-y-1">
+                      {alert.codes.map((c) => {
+                        const daysLeft = Math.ceil((new Date(c.expiresAt).getTime() - Date.now()) / (1000 * 60 * 60 * 24));
+                        return (
+                          <div key={c.codeId} className="flex items-center gap-2 text-xs">
+                            <span className={`font-mono font-medium ${daysLeft <= 1 ? 'text-red-400' : 'text-yellow-400'}`}>
+                              {c.code}
+                            </span>
+                            {c.name && <span className="text-muted-foreground">{c.name}</span>}
+                            <span className={`ml-auto font-medium ${daysLeft <= 1 ? 'text-red-400' : 'text-yellow-500'}`}>
+                              {daysLeft <= 0 ? 'vence hoy' : daysLeft === 1 ? 'vence mañana' : `${daysLeft}d restantes`}
+                            </span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                  <div className="flex gap-2 flex-shrink-0 flex-wrap">
+                    <Button
+                      size="sm"
+                      className="h-8 text-xs bg-green-600 hover:bg-green-700 text-white gap-1.5"
+                      onClick={() => handleSendAndDismiss(alert.subadminId, alert.codes.map(c => c.codeId), alert.waUrl)}
+                      disabled={dismissMutation.isPending}
+                    >
+                      <span>📱</span> Enviar WhatsApp
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="h-8 text-xs text-muted-foreground"
+                      onClick={() => handleDismiss(alert.subadminId, alert.codes.map(c => c.codeId))}
+                      disabled={dismissMutation.isPending}
+                    >
+                      Descartar
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+type TimeUnit = 'minutes' | 'hours' | 'days' | 'months' | 'years';
+const TIME_UNITS: { value: TimeUnit; label: string }[] = [
+  { value: 'minutes', label: 'Minutos' },
+  { value: 'hours', label: 'Horas' },
+  { value: 'days', label: 'Días' },
+  { value: 'months', label: 'Meses' },
+  { value: 'years', label: 'Años' },
+];
+
+function unitsToMinutes(amount: number, unit: TimeUnit): number {
+  const map: Record<TimeUnit, number> = {
+    minutes: 1,
+    hours: 60,
+    days: 24 * 60,
+    months: 30 * 24 * 60,
+    years: 365 * 24 * 60,
+  };
+  return Math.round(amount * map[unit]);
+}
+
+function minutesToLabel(minutes: number): string {
+  if (minutes >= 365 * 24 * 60 && minutes % (365 * 24 * 60) === 0)
+    return `${minutes / (365 * 24 * 60)} año(s)`;
+  if (minutes >= 30 * 24 * 60 && minutes % (30 * 24 * 60) === 0)
+    return `${minutes / (30 * 24 * 60)} mes(es)`;
+  if (minutes >= 24 * 60 && minutes % (24 * 60) === 0)
+    return `${minutes / (24 * 60)} día(s)`;
+  if (minutes >= 60 && minutes % 60 === 0)
+    return `${minutes / 60} hora(s)`;
+  return `${minutes} minuto(s)`;
+}
+
+function minutesToEditState(minutes: number): { amount: string; unit: TimeUnit } {
+  if (minutes >= 365 * 24 * 60 && minutes % (365 * 24 * 60) === 0)
+    return { amount: String(minutes / (365 * 24 * 60)), unit: 'years' };
+  if (minutes >= 30 * 24 * 60 && minutes % (30 * 24 * 60) === 0)
+    return { amount: String(minutes / (30 * 24 * 60)), unit: 'months' };
+  if (minutes >= 24 * 60 && minutes % (24 * 60) === 0)
+    return { amount: String(minutes / (24 * 60)), unit: 'days' };
+  if (minutes >= 60 && minutes % 60 === 0)
+    return { amount: String(minutes / 60), unit: 'hours' };
+  return { amount: String(minutes), unit: 'minutes' };
+}
+
+function getDomain(url: string): string {
+  try { return new URL(url).hostname; } catch { return url.length > 35 ? url.slice(0, 35) + '…' : url; }
+}
+
+function SelectUnit({ value, onChange }: { value: TimeUnit; onChange: (v: TimeUnit) => void }) {
+  return (
+    <select value={value} onChange={e => onChange(e.target.value as TimeUnit)}
+      className="flex h-9 rounded-md border border-input bg-background px-2 py-1 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-ring">
+      {TIME_UNITS.map(u => <option key={u.value} value={u.value}>{u.label}</option>)}
+    </select>
+  );
+}
+
+function CodesManager() {
+  const qc = useQueryClient();
+  const { toast } = useToast();
+  const { data: codes, isLoading } = useListCodes({ query: { queryKey: getListCodesQueryKey() } });
+  const createMutation = useCreateCode();
+  const deleteMutation = useDeleteCode();
+  const adjustMutation = useAdjustCodeTime();
+  const updateMutation = useUpdateCode();
+
+  const [showForm, setShowForm] = useState(false);
+  const [newCode, setNewCode] = useState('');
+  const [newName, setNewName] = useState('');
+  const [newAmount, setNewAmount] = useState('30');
+  const [newUnit, setNewUnit] = useState<TimeUnit>('days');
+  const [adjustId, setAdjustId] = useState<number | null>(null);
+  const [adjAmount, setAdjAmount] = useState('7');
+  const [adjUnit, setAdjUnit] = useState<TimeUnit>('days');
+  const [adjOp, setAdjOp] = useState<'add' | 'subtract'>('add');
+  const [reactivateId, setReactivateId] = useState<number | null>(null);
+  const [reactAmount, setReactAmount] = useState('30');
+  const [reactUnit, setReactUnit] = useState<TimeUnit>('days');
+  const [codeSearch, setCodeSearch] = useState('');
+  const [codeStatusFilter, setCodeStatusFilter] = useState<'all' | 'active' | 'expired' | 'inactive'>('all');
+
+  const filteredCodes = useMemo(() => {
+    let list = codes || [];
+    if (codeStatusFilter === 'active') list = list.filter(c => !c.isExpired && c.isActive);
+    else if (codeStatusFilter === 'expired') list = list.filter(c => c.isExpired);
+    else if (codeStatusFilter === 'inactive') list = list.filter(c => !c.isActive && !c.isExpired);
+    if (!codeSearch.trim()) return list;
+    const q = codeSearch.trim().toLowerCase();
+    return list.filter(c =>
+      c.code.toLowerCase().includes(q) ||
+      (c.name ?? '').toLowerCase().includes(q)
+    );
+  }, [codes, codeSearch, codeStatusFilter]);
+
+  const handleCodeInput = (val: string) => {
+    setNewCode(val.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 5));
+  };
+
+  const handleCreate = () => {
+    const durationMinutes = unitsToMinutes(parseInt(newAmount) || 30, newUnit);
+    const codeVal = newCode.trim().toUpperCase() || undefined;
+    createMutation.mutate({ data: { code: codeVal, name: newName || undefined, durationMinutes } }, {
+      onSuccess: () => {
+        qc.invalidateQueries({ queryKey: getListCodesQueryKey() });
+        toast({ title: 'Código creado' });
+        setNewCode(''); setNewName(''); setNewAmount('30'); setNewUnit('days'); setShowForm(false);
+      },
+      onError: () => toast({ variant: 'destructive', title: 'Error al crear código' })
+    });
+  };
+
+  const handleDelete = (id: number) => {
+    if (!confirm('¿Eliminar este código?')) return;
+    deleteMutation.mutate({ id }, {
+      onSuccess: () => { qc.invalidateQueries({ queryKey: getListCodesQueryKey() }); toast({ title: 'Código eliminado' }); }
+    });
+  };
+
+  const handleAdjust = (id: number) => {
+    adjustMutation.mutate({ id, data: { amount: parseInt(adjAmount) || 1, unit: adjUnit, operation: adjOp } }, {
+      onSuccess: () => {
+        qc.invalidateQueries({ queryKey: getListCodesQueryKey() });
+        toast({ title: `Tiempo ${adjOp === 'add' ? 'añadido' : 'reducido'}` });
+        setAdjustId(null);
+      },
+      onError: () => toast({ variant: 'destructive', title: 'Error al ajustar tiempo' })
+    });
+  };
+
+  const handleReactivate = (id: number) => {
+    const ms = unitsToMinutes(parseInt(reactAmount) || 30, reactUnit) * 60 * 1000;
+    const newExpiry = new Date(Date.now() + ms).toISOString();
+    updateMutation.mutate({ id, data: { expiresAt: newExpiry, isActive: true } }, {
+      onSuccess: () => {
+        qc.invalidateQueries({ queryKey: getListCodesQueryKey() });
+        toast({ title: 'Código reactivado', description: `Nuevo vencimiento: ${minutesToLabel(unitsToMinutes(parseInt(reactAmount) || 30, reactUnit))} desde hoy.` });
+        setReactivateId(null);
+      },
+      onError: () => toast({ variant: 'destructive', title: 'Error al reactivar' })
+    });
+  };
+
+  if (isLoading) return <div className="text-muted-foreground">Cargando...</div>;
+
+  return (
+    <div className="space-y-4">
+      <div className="flex justify-between items-center">
+        <h3 className="text-lg font-medium flex items-center gap-2">
+          Gestión de Códigos
+          <span className="text-sm font-normal text-muted-foreground">
+            ({filteredCodes.length}{(codeSearch.trim() || codeStatusFilter !== 'all') ? ` de ${codes?.length ?? 0}` : ''})
+          </span>
+        </h3>
+        <Button size="sm" onClick={() => setShowForm(!showForm)}><Plus className="w-4 h-4 mr-2" />Nuevo Código</Button>
+      </div>
+
+      <div className="relative">
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+        <Input
+          value={codeSearch}
+          onChange={e => setCodeSearch(e.target.value)}
+          placeholder="Buscar por código o nombre..."
+          className="pl-9 pr-8"
+        />
+        {codeSearch && (
+          <button onClick={() => setCodeSearch('')} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
+            <X className="w-3.5 h-3.5" />
+          </button>
+        )}
+      </div>
+      <div className="flex gap-2 flex-wrap">
+        {(['all', 'active', 'expired', 'inactive'] as const).map(s => {
+          const labels = { all: 'Todos', active: 'Activos', expired: 'Expirados', inactive: 'Inactivos' };
+          const colors = {
+            all: codeStatusFilter === 'all' ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground hover:text-foreground',
+            active: codeStatusFilter === 'active' ? 'bg-green-600 text-white' : 'bg-muted text-muted-foreground hover:text-foreground',
+            expired: codeStatusFilter === 'expired' ? 'bg-red-600 text-white' : 'bg-muted text-muted-foreground hover:text-foreground',
+            inactive: codeStatusFilter === 'inactive' ? 'bg-yellow-600 text-white' : 'bg-muted text-muted-foreground hover:text-foreground',
+          };
+          return (
+            <button key={s} onClick={() => setCodeStatusFilter(s)} className={`text-xs px-3 py-1 rounded-full font-medium transition-colors ${colors[s]}`}>
+              {labels[s]}
+            </button>
+          );
+        })}
+      </div>
+
+      {showForm && (
+        <Card className="bg-background border-border p-4 space-y-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <Input
+              placeholder="Código (auto si vacío, máx 5 chars)"
+              value={newCode}
+              onChange={e => handleCodeInput(e.target.value)}
+              maxLength={5}
+              className="uppercase"
+            />
+            <Input placeholder="Nombre / cliente" value={newName} onChange={e => setNewName(e.target.value)} />
+          </div>
+          <div className="flex gap-2 items-center flex-wrap">
+            <span className="text-sm text-muted-foreground whitespace-nowrap">Duración:</span>
+            <Input type="number" min="1" className="w-24" value={newAmount} onChange={e => setNewAmount(e.target.value)} />
+            <SelectUnit value={newUnit} onChange={setNewUnit} />
+            <span className="text-xs text-muted-foreground">= {minutesToLabel(unitsToMinutes(parseInt(newAmount) || 30, newUnit))}</span>
+          </div>
+          <div className="flex gap-2">
+            <Button onClick={handleCreate} disabled={createMutation.isPending}>{createMutation.isPending ? 'Creando...' : 'Crear Código'}</Button>
+            <Button variant="outline" onClick={() => setShowForm(false)}>Cancelar</Button>
+          </div>
+        </Card>
+      )}
+
+      {adjustId !== null && (
+        <Card className="bg-background border-border p-4 space-y-3">
+          <p className="text-sm font-medium">Ajustar tiempo del código #{adjustId}</p>
+          <div className="flex gap-2 items-center flex-wrap">
+            <select value={adjOp} onChange={e => setAdjOp(e.target.value as 'add' | 'subtract')}
+              className="flex h-9 rounded-md border border-input bg-background px-3 py-1 text-sm text-foreground">
+              <option value="add">Sumar</option>
+              <option value="subtract">Restar</option>
+            </select>
+            <Input type="number" min="1" className="w-24" value={adjAmount} onChange={e => setAdjAmount(e.target.value)} />
+            <SelectUnit value={adjUnit} onChange={setAdjUnit} />
+            <Button size="sm" onClick={() => handleAdjust(adjustId)} disabled={adjustMutation.isPending}>
+              {adjustMutation.isPending ? 'Ajustando...' : 'Aplicar'}
+            </Button>
+            <Button size="sm" variant="outline" onClick={() => setAdjustId(null)}>Cancelar</Button>
+          </div>
+        </Card>
+      )}
+
+      {reactivateId !== null && (
+        <Card className="bg-background border-border p-4 space-y-3">
+          <p className="text-sm font-medium flex items-center gap-2">
+            <RotateCcw className="w-4 h-4 text-green-400" />
+            Reactivar código #{reactivateId} — nueva duración desde hoy
+          </p>
+          <div className="flex gap-2 items-center flex-wrap">
+            {[
+              { label: '30 días', amount: '30', unit: 'days' as TimeUnit },
+              { label: '60 días', amount: '60', unit: 'days' as TimeUnit },
+              { label: '90 días', amount: '90', unit: 'days' as TimeUnit },
+              { label: '1 año',   amount: '1',  unit: 'years' as TimeUnit },
+            ].map(opt => (
+              <Button
+                key={opt.label}
+                size="sm"
+                variant={reactAmount === opt.amount && reactUnit === opt.unit ? 'default' : 'outline'}
+                onClick={() => { setReactAmount(opt.amount); setReactUnit(opt.unit); }}
+              >
+                {opt.label}
+              </Button>
+            ))}
+          </div>
+          <div className="flex gap-2 items-center flex-wrap">
+            <span className="text-xs text-muted-foreground">Personalizado:</span>
+            <Input type="number" min="1" className="w-24" value={reactAmount} onChange={e => setReactAmount(e.target.value)} />
+            <SelectUnit value={reactUnit} onChange={setReactUnit} />
+            <Button size="sm" className="bg-green-600 hover:bg-green-700 text-white" onClick={() => handleReactivate(reactivateId)} disabled={updateMutation.isPending}>
+              {updateMutation.isPending ? 'Reactivando...' : 'Reactivar'}
+            </Button>
+            <Button size="sm" variant="outline" onClick={() => setReactivateId(null)}>Cancelar</Button>
+          </div>
+        </Card>
+      )}
+
+      <div className="overflow-x-auto rounded-lg border border-border">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Código</TableHead>
+              <TableHead>Nombre</TableHead>
+              <TableHead>Estado</TableHead>
+              <TableHead>Vence</TableHead>
+              <TableHead className="text-right">Acciones</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {filteredCodes.map((code) => (
+              <TableRow key={code.id}>
+                <TableCell className="font-mono font-bold tracking-wider">{code.code}</TableCell>
+                <TableCell>{code.name || '-'}</TableCell>
+                <TableCell>
+                  <span className={`px-2 py-1 rounded-full text-xs font-medium ${code.isExpired ? 'bg-yellow-500/20 text-yellow-400' : code.isActive ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400'}`}>
+                    {code.isExpired ? 'Expirado' : code.isActive ? 'Activo' : 'Inactivo'}
+                  </span>
+                </TableCell>
+                <TableCell className="text-sm">{code.expiresAt ? new Date(code.expiresAt).toLocaleDateString('es-ES') : 'Ilimitado'}</TableCell>
+                <TableCell className="text-right">
+                  <div className="flex items-center justify-end gap-1">
+                    {code.isExpired && (
+                      <Button variant="ghost" size="icon" title="Reactivar código" className="text-green-400 hover:text-green-300 w-8 h-8"
+                        onClick={() => { setReactivateId(code.id); setReactAmount('30'); setReactUnit('days'); setAdjustId(null); }}>
+                        <RotateCcw className="w-3.5 h-3.5" />
+                      </Button>
+                    )}
+                    <Button variant="ghost" size="icon" title="Ajustar tiempo" className="text-blue-400 hover:text-blue-300 w-8 h-8"
+                      onClick={() => { setAdjustId(code.id); setAdjAmount('7'); setAdjUnit('days'); setAdjOp('add'); setReactivateId(null); }}>
+                      <Clock className="w-3.5 h-3.5" />
+                    </Button>
+                    <Button variant="ghost" size="icon" className="text-destructive hover:text-destructive w-8 h-8" onClick={() => handleDelete(code.id)}>
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </Button>
+                  </div>
+                </TableCell>
+              </TableRow>
+            ))}
+            {filteredCodes.length === 0 && (
+              <TableRow><TableCell colSpan={5} className="text-center text-muted-foreground py-8">{codeSearch.trim() ? 'Sin resultados para esa búsqueda' : 'Sin códigos aún'}</TableCell></TableRow>
+            )}
+          </TableBody>
+        </Table>
+      </div>
+    </div>
+  );
+}
+
+type StreamTestResult = { ok: boolean; status: number; latencyMs: number; message: string } | null;
+
+function MaskedLink({ publicUrl, realUrl }: { publicUrl: string; realUrl: string }) {
+  const [showReal, setShowReal] = useState(false);
+  const copy = (url: string) => navigator.clipboard.writeText(url).catch(() => {});
+  return (
+    <div className="flex items-center gap-1 min-w-0">
+      <span className="text-xs font-mono truncate max-w-[140px]" title={showReal ? realUrl : publicUrl}>
+        {showReal
+          ? <span className="text-amber-400">{(() => { try { return new URL(realUrl).hostname; } catch { return realUrl.slice(0, 28) + '…'; } })()}</span>
+          : <span className="text-blue-400">{publicUrl.replace(/^https?:\/\//, '')}</span>
+        }
+      </span>
+      <Button variant="ghost" size="icon" className="w-6 h-6 flex-shrink-0" title={showReal ? 'Ocultar URL real' : 'Ver URL real'}
+        onClick={() => setShowReal(p => !p)}>
+        {showReal ? <EyeOff className="w-3 h-3" /> : <Eye className="w-3 h-3" />}
+      </Button>
+      <Button variant="ghost" size="icon" className="w-6 h-6 flex-shrink-0" title="Copiar enlace"
+        onClick={() => copy(showReal ? realUrl : publicUrl)}>
+        <Copy className="w-3 h-3" />
+      </Button>
+    </div>
+  );
+}
+
+function CategoryChipPicker({ channelId, currentCategory, existingCategories, onAssigned }: {
+  channelId: number;
+  currentCategory?: string | null;
+  existingCategories: string[];
+  onAssigned: (channelId: number, category: string | null) => Promise<void>;
+}) {
+  const [open, setOpen] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [open]);
+
+  const handle = async (cat: string | null) => {
+    setSaving(true);
+    await onAssigned(channelId, cat);
+    setSaving(false);
+    setOpen(false);
+  };
+
+  return (
+    <div className="relative" ref={ref}>
+      <button
+        onClick={() => setOpen(p => !p)}
+        disabled={saving}
+        className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full border border-transparent hover:border-primary/50 transition-colors cursor-pointer"
+        title="Clic para cambiar categoría"
+      >
+        {saving
+          ? <Loader2 className="w-3 h-3 animate-spin" />
+          : currentCategory
+            ? <span className="text-primary font-medium">{currentCategory}</span>
+            : <span className="text-muted-foreground italic">Sin categoría</span>
+        }
+        <Tag className="w-3 h-3 text-muted-foreground" />
+      </button>
+      {open && (
+        <div className="absolute left-0 top-full mt-1 z-50 bg-card border border-border rounded-lg shadow-xl p-2 min-w-48 max-w-64">
+          <p className="text-xs text-muted-foreground mb-2 px-1 font-medium">Asignar categoría:</p>
+          <div className="flex flex-wrap gap-1.5 max-h-48 overflow-y-auto">
+            {existingCategories.map(cat => (
+              <button
+                key={cat}
+                onClick={() => handle(cat)}
+                className={`text-xs px-2.5 py-1 rounded-full border transition-colors cursor-pointer ${
+                  cat === currentCategory
+                    ? 'bg-primary text-primary-foreground border-primary'
+                    : 'bg-background border-border hover:border-primary/60 hover:bg-primary/10'
+                }`}
+              >
+                {cat}
+              </button>
+            ))}
+            {currentCategory && (
+              <button
+                onClick={() => handle(null)}
+                className="text-xs px-2.5 py-1 rounded-full border border-dashed border-destructive/50 text-destructive hover:bg-destructive/10 transition-colors cursor-pointer"
+              >
+                Quitar
+              </button>
+            )}
+            {existingCategories.length === 0 && (
+              <p className="text-xs text-muted-foreground px-1">No hay categorías aún</p>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function SortableChannelRow({ ch, onEdit, onDelete, testing, testResult, onTest, selected, onSelect, selectionMode, existingCategories, onCategoryChange }: {
+  ch: { id: number; name: string; category?: string | null; streamUrl: string; logo?: string | null };
+  onEdit: () => void;
+  onDelete: () => void;
+  testing: boolean;
+  testResult: StreamTestResult | null | undefined;
+  onTest: () => void;
+  selected: boolean;
+  onSelect: (id: number) => void;
+  selectionMode: boolean;
+  existingCategories: string[];
+  onCategoryChange: (channelId: number, category: string | null) => Promise<void>;
+}) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: ch.id });
+  const style = { transform: CSS.Transform.toString(transform), transition, opacity: isDragging ? 0.5 : 1 };
+  const publicUrl = `${window.location.origin}/home`;
+  return (
+    <TableRow ref={setNodeRef} style={style} className={selected ? 'bg-primary/10' : ''}>
+      <TableCell className="w-8 pr-0">
+        {selectionMode
+          ? <input type="checkbox" checked={selected} onChange={() => onSelect(ch.id)}
+              className="w-4 h-4 cursor-pointer accent-primary" />
+          : <button {...attributes} {...listeners} className="cursor-grab active:cursor-grabbing text-muted-foreground hover:text-foreground p-1 touch-none">
+              <GripVertical className="w-4 h-4" />
+            </button>
+        }
+      </TableCell>
+      <TableCell className="font-medium">{ch.name}</TableCell>
+      <TableCell>
+        {selectionMode
+          ? <span className="text-sm text-muted-foreground">{ch.category || '-'}</span>
+          : <CategoryChipPicker
+              channelId={ch.id}
+              currentCategory={ch.category}
+              existingCategories={existingCategories}
+              onAssigned={onCategoryChange}
+            />
+        }
+      </TableCell>
+      <TableCell>
+        <MaskedLink publicUrl={publicUrl} realUrl={ch.streamUrl} />
+      </TableCell>
+      {!selectionMode && <TableCell>
+        {testing ? <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />
+          : testResult ? (
+            <div className="flex items-center gap-1">
+              {testResult.ok ? <CheckCircle2 className="w-4 h-4 text-green-400" /> : <XCircle className="w-4 h-4 text-red-400" />}
+              <span className="text-xs text-muted-foreground">{testResult.latencyMs}ms</span>
+            </div>
+          ) : (
+            <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={onTest}><Wifi className="w-3 h-3 mr-1" />Test</Button>
+          )}
+      </TableCell>}
+      <TableCell className="text-right">
+        {selectionMode
+          ? null
+          : <div className="flex items-center justify-end gap-1">
+              <Button variant="ghost" size="icon" className="text-yellow-400 hover:text-yellow-300 w-8 h-8" onClick={onEdit}><Pencil className="w-4 h-4" /></Button>
+              <Button variant="ghost" size="icon" className="text-destructive hover:text-destructive w-8 h-8" onClick={onDelete}><Trash2 className="w-4 h-4" /></Button>
+            </div>
+        }
+      </TableCell>
+    </TableRow>
+  );
+}
+
+function SortableCategoryItem({ id, label }: { id: string; label: string }) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id });
+  const style = { transform: CSS.Transform.toString(transform), transition, opacity: isDragging ? 0.4 : 1 };
+  return (
+    <div ref={setNodeRef} style={style} className="flex items-center gap-2 bg-background border border-border rounded-lg px-3 py-2 group">
+      <button {...attributes} {...listeners} className="cursor-grab active:cursor-grabbing text-muted-foreground hover:text-foreground touch-none">
+        <GripVertical className="w-4 h-4" />
+      </button>
+      <span className="text-sm font-medium flex-1">{label}</span>
+      <Tag className="w-3.5 h-3.5 text-muted-foreground group-hover:text-primary transition-colors" />
+    </div>
+  );
+}
+
+function SortableMovieRow({ mv, onEdit, onDelete }: {
+  mv: { id: number; title: string; category?: string | null; filePath: string };
+  onEdit: () => void;
+  onDelete: () => void;
+}) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: mv.id });
+  const style = { transform: CSS.Transform.toString(transform), transition, opacity: isDragging ? 0.5 : 1 };
+  const publicUrl = `${window.location.origin}/pelicula/${mv.id}`;
+  return (
+    <TableRow ref={setNodeRef} style={style}>
+      <TableCell>
+        <button {...attributes} {...listeners} className="cursor-grab active:cursor-grabbing text-muted-foreground hover:text-foreground p-1 touch-none">
+          <GripVertical className="w-4 h-4" />
+        </button>
+      </TableCell>
+      <TableCell className="font-medium">{mv.title}</TableCell>
+      <TableCell className="text-sm text-muted-foreground">{mv.category || '-'}</TableCell>
+      <TableCell>
+        <MaskedLink publicUrl={publicUrl} realUrl={mv.filePath} />
+      </TableCell>
+      <TableCell className="text-right">
+        <div className="flex items-center justify-end gap-1">
+          <Button variant="ghost" size="icon" className="text-yellow-400 hover:text-yellow-300 w-8 h-8" onClick={onEdit}><Pencil className="w-4 h-4" /></Button>
+          <Button variant="ghost" size="icon" className="text-destructive hover:text-destructive w-8 h-8" onClick={onDelete}><Trash2 className="w-4 h-4" /></Button>
+        </div>
+      </TableCell>
+    </TableRow>
+  );
+}
+
+interface CsvChannel {
+  name: string;
+  streamUrl: string;
+  category: string;
+  logo: string;
+  valid: boolean;
+  error?: string;
+}
+
+function parseCSV(text: string): CsvChannel[] {
+  const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
+  if (lines.length < 2) return [];
+
+  const parseLine = (line: string): string[] => {
+    const result: string[] = [];
+    let current = '';
+    let inQuotes = false;
+    for (let i = 0; i < line.length; i++) {
+      const ch = line[i];
+      if (ch === '"') {
+        inQuotes = !inQuotes;
+      } else if ((ch === ',' || ch === ';') && !inQuotes) {
+        result.push(current.trim());
+        current = '';
+      } else {
+        current += ch;
+      }
+    }
+    result.push(current.trim());
+    return result;
+  };
+
+  const header = parseLine(lines[0]).map(h => h.toLowerCase().replace(/[^a-z_]/g, ''));
+  const find = (names: string[]) => header.findIndex(h => names.some(n => h.includes(n)));
+
+  const nameIdx = find(['name', 'nombre', 'canal', 'channel', 'title']);
+  const urlIdx = find(['url', 'stream', 'link', 'enlace', 'address']);
+  const catIdx = find(['cat', 'group', 'grupo', 'category', 'categoria']);
+  const logoIdx = find(['logo', 'icon', 'imagen', 'image', 'thumbnail']);
+
+  if (urlIdx === -1) return [];
+
+  return lines.slice(1).map((line, i) => {
+    const cols = parseLine(line);
+    const url = cols[urlIdx]?.trim() ?? '';
+    const name = nameIdx >= 0 ? cols[nameIdx]?.trim() : '';
+    const isValidUrl = url.startsWith('http://') || url.startsWith('https://') || url.startsWith('rtmp://') || url.startsWith('rtsp://');
+    return {
+      name: name || `Canal ${i + 1}`,
+      streamUrl: url,
+      category: catIdx >= 0 ? cols[catIdx]?.trim() ?? '' : '',
+      logo: logoIdx >= 0 ? cols[logoIdx]?.trim() ?? '' : '',
+      valid: isValidUrl,
+      error: !isValidUrl ? 'URL inválida' : undefined,
+    };
+  });
+}
+
+function csvToM3U(channels: CsvChannel[]): string {
+  let out = '#EXTM3U\n';
+  for (const ch of channels) {
+    let info = '#EXTINF:-1';
+    if (ch.logo) info += ` tvg-logo="${ch.logo}"`;
+    if (ch.category) info += ` group-title="${ch.category}"`;
+    info += `,${ch.name}`;
+    out += info + '\n' + ch.streamUrl + '\n';
+  }
+  return out;
+}
+
+function downloadCsvTemplate() {
+  const csv = 'name,url,category,logo\nCNN en Español,http://ejemplo.com/cnn.m3u8,Noticias,https://logo.com/cnn.png\nESPN,http://ejemplo.com/espn.m3u8,Deportes,\n';
+  const blob = new Blob([csv], { type: 'text/csv' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'canales_plantilla.csv';
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
+type ImportTab = 'm3u' | 'csv' | 'urls';
+
+function ChannelsManager() {
+  const qc = useQueryClient();
+  const { toast } = useToast();
+  const { data: channels, isLoading } = useListChannels(undefined, { query: { queryKey: getListChannelsQueryKey() } });
+  const { data: existingCategories = [] } = useListChannelCategories();
+  const createMutation = useCreateChannel();
+  const updateMutation = useUpdateChannel();
+  const deleteMutation = useDeleteChannel();
+  const importMutation = useImportChannels();
+
+  const [showForm, setShowForm] = useState(false);
+  const [showImportDialog, setShowImportDialog] = useState(false);
+  const [importTab, setImportTab] = useState<ImportTab>('csv');
+  const [importContent, setImportContent] = useState('');
+  const [urlsPrefix, setUrlsPrefix] = useState('Canal');
+  const [csvRows, setCsvRows] = useState<CsvChannel[]>([]);
+  const [csvFileName, setCsvFileName] = useState('');
+  const [newCh, setNewCh] = useState({ name: '', streamUrl: '', category: '', logo: '' });
+  const [testResults, setTestResults] = useState<Record<number, StreamTestResult>>({});
+  const [testing, setTesting] = useState<Record<number, boolean>>({});
+  const [editCh, setEditCh] = useState<{ id: number; name: string; streamUrl: string; category: string; logo: string } | null>(null);
+  const [sortMode, setSortMode] = useState(false);
+  const [sortedIds, setSortedIds] = useState<number[]>([]);
+  const [saving, setSaving] = useState(false);
+  const [selectionMode, setSelectionMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+  const [bulkDeleting, setBulkDeleting] = useState(false);
+  const [bulkCategoryOpen, setBulkCategoryOpen] = useState(false);
+  const [bulkCategoryValue, setBulkCategoryValue] = useState('');
+  const [bulkCategorySaving, setBulkCategorySaving] = useState(false);
+  const [channelSearch, setChannelSearch] = useState('');
+  const [catOrderMode, setCatOrderMode] = useState(false);
+  const [catOrder, setCatOrder] = useState<string[]>([]);
+  const [catOrderSaving, setCatOrderSaving] = useState(false);
+  const folderRef = useRef<HTMLInputElement>(null);
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+    useSensor(TouchSensor, { activationConstraint: { delay: 150, tolerance: 5 } })
+  );
+
+  const channelsList = channels || [];
+
+  const filteredChannels = useMemo(() => {
+    const q = channelSearch.trim().toLowerCase();
+    if (!q) return channelsList;
+    return channelsList.filter(c =>
+      c.name.toLowerCase().includes(q) ||
+      (c.category ?? '').toLowerCase().includes(q)
+    );
+  }, [channelsList, channelSearch]);
+
+  const toggleSortMode = () => {
+    if (!sortMode) setSortedIds(channelsList.map(c => c.id));
+    setSortMode(p => !p);
+  };
+
+  const openCatOrderMode = () => {
+    const currentOrder = existingCategories.length > 0 ? [...existingCategories] : [];
+    setCatOrder(currentOrder);
+    setCatOrderMode(true);
+  };
+
+  const handleCatOrderDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+    const oldIndex = catOrder.indexOf(active.id as string);
+    const newIndex = catOrder.indexOf(over.id as string);
+    setCatOrder(prev => arrayMove(prev, oldIndex, newIndex));
+  };
+
+  const saveCatOrder = async () => {
+    setCatOrderSaving(true);
+    try {
+      const token = getToken('admin');
+      await fetch(`${BASE_URL}/api/channels/category-order`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ order: catOrder }),
+      });
+      qc.invalidateQueries({ queryKey: ['channels', 'categories'] });
+      toast({ title: 'Orden de categorías guardado' });
+      setCatOrderMode(false);
+    } catch {
+      toast({ variant: 'destructive', title: 'Error al guardar el orden' });
+    } finally {
+      setCatOrderSaving(false);
+    }
+  };
+
+  const handleQuickCategory = async (channelId: number, category: string | null) => {
+    const token = getToken('admin');
+    await fetch(`${BASE_URL}/api/channels/${channelId}/category`, {
+      method: 'PATCH',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ category }),
+    });
+    qc.invalidateQueries({ queryKey: getListChannelsQueryKey() });
+  };
+
+  const handleDragEnd = async (event: DragEndEvent) => {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+    const oldIndex = sortedIds.indexOf(active.id as number);
+    const newIndex = sortedIds.indexOf(over.id as number);
+    const newOrder = arrayMove(sortedIds, oldIndex, newIndex);
+    setSortedIds(newOrder);
+    setSaving(true);
+    try {
+      const token = getToken('admin');
+      await fetch(`${BASE_URL}/api/channels/reorder`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids: newOrder }),
+      });
+      qc.invalidateQueries({ queryKey: getListChannelsQueryKey() });
+    } catch {
+      toast({ variant: 'destructive', title: 'Error al guardar orden' });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleCreate = () => {
+    if (!newCh.name || !newCh.streamUrl) { toast({ variant: 'destructive', title: 'Nombre y URL son requeridos' }); return; }
+    createMutation.mutate({ data: { name: newCh.name, streamUrl: newCh.streamUrl, category: newCh.category || undefined, logo: newCh.logo || undefined } }, {
+      onSuccess: () => {
+        qc.invalidateQueries({ queryKey: getListChannelsQueryKey() });
+        toast({ title: 'Canal creado' });
+        setNewCh({ name: '', streamUrl: '', category: '', logo: '' }); setShowForm(false);
+      },
+      onError: () => toast({ variant: 'destructive', title: 'Error al crear canal' })
+    });
+  };
+
+  const handleUpdate = () => {
+    if (!editCh || !editCh.name || !editCh.streamUrl) { toast({ variant: 'destructive', title: 'Nombre y URL son requeridos' }); return; }
+    updateMutation.mutate({ id: editCh.id, data: { name: editCh.name, streamUrl: editCh.streamUrl, category: editCh.category || undefined, logo: editCh.logo || undefined } }, {
+      onSuccess: () => {
+        qc.invalidateQueries({ queryKey: getListChannelsQueryKey() });
+        toast({ title: 'Canal actualizado' });
+        setEditCh(null);
+      },
+      onError: () => toast({ variant: 'destructive', title: 'Error al actualizar canal' })
+    });
+  };
+
+  const handleDelete = (id: number) => {
+    if (!confirm('¿Eliminar este canal?')) return;
+    deleteMutation.mutate({ id }, {
+      onSuccess: () => { qc.invalidateQueries({ queryKey: getListChannelsQueryKey() }); toast({ title: 'Canal eliminado' }); }
+    });
+  };
+
+  const toggleSelect = (id: number) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+  };
+
+  const toggleSelectAll = () => {
+    if (selectedIds.size === filteredChannels.length) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(filteredChannels.map(c => c.id)));
+    }
+  };
+
+  const handleBulkDelete = async () => {
+    if (selectedIds.size === 0) return;
+    if (!confirm(`¿Eliminar ${selectedIds.size} canal${selectedIds.size !== 1 ? 'es' : ''}? Esta acción no se puede deshacer.`)) return;
+    setBulkDeleting(true);
+    try {
+      const token = getToken('admin');
+      await fetch(`${BASE_URL}/api/channels/bulk`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids: Array.from(selectedIds) }),
+      });
+      qc.invalidateQueries({ queryKey: getListChannelsQueryKey() });
+      toast({ title: `🗑️ ${selectedIds.size} canal${selectedIds.size !== 1 ? 'es eliminados' : ' eliminado'}` });
+      setSelectedIds(new Set());
+      setSelectionMode(false);
+    } catch {
+      toast({ variant: 'destructive', title: 'Error al eliminar canales' });
+    } finally {
+      setBulkDeleting(false);
+    }
+  };
+
+  const handleBulkCategory = async () => {
+    if (selectedIds.size === 0 || bulkCategorySaving) return;
+    setBulkCategorySaving(true);
+    try {
+      const token = getToken('admin');
+      await fetch(`${BASE_URL}/api/channels/bulk-category`, {
+        method: 'PATCH',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids: Array.from(selectedIds), category: bulkCategoryValue.trim() || null }),
+      });
+      qc.invalidateQueries({ queryKey: getListChannelsQueryKey() });
+      toast({ title: `✅ Categoría asignada a ${selectedIds.size} canal${selectedIds.size !== 1 ? 'es' : ''}` });
+      setBulkCategoryOpen(false);
+      setBulkCategoryValue('');
+      setSelectedIds(new Set());
+      setSelectionMode(false);
+    } catch {
+      toast({ variant: 'destructive', title: 'Error al asignar categoría' });
+    } finally {
+      setBulkCategorySaving(false);
+    }
+  };
+
+  const csvFileRef = useRef<HTMLInputElement>(null);
+  const urlsFileRef = useRef<HTMLInputElement>(null);
+
+  const handleCsvFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const text = await file.text();
+    const rows = parseCSV(text);
+    setCsvRows(rows);
+    setCsvFileName(file.name);
+    e.target.value = '';
+  };
+
+  const handleCsvPaste = (text: string) => {
+    setImportContent(text);
+    const rows = parseCSV(text);
+    setCsvRows(rows);
+    setCsvFileName('');
+  };
+
+  const handleImport = () => {
+    const isPending = importMutation.isPending;
+    if (isPending) return;
+
+    if (importTab === 'csv') {
+      const valid = csvRows.filter(r => r.valid);
+      if (!valid.length) return;
+      const m3u = csvToM3U(valid);
+      importMutation.mutate({ data: { content: m3u, format: 'm3u' } }, {
+        onSuccess: (data) => {
+          qc.invalidateQueries({ queryKey: getListChannelsQueryKey() });
+          toast({ title: `✅ Importados ${data.imported} canales`, description: data.failed > 0 ? `${data.failed} fallaron` : 'Todos los canales fueron importados correctamente' });
+          setCsvRows([]); setCsvFileName(''); setImportContent(''); setShowImportDialog(false);
+        },
+        onError: () => toast({ variant: 'destructive', title: 'Error al importar CSV' })
+      });
+    } else {
+      if (!importContent.trim()) return;
+      let content = importContent;
+      let format: 'm3u' | 'auto' = importTab === 'm3u' ? 'm3u' : 'auto';
+      if (importTab === 'urls') {
+        const prefix = urlsPrefix.trim() || 'Canal';
+        const urls = (importContent.match(/(?:https?|rtmp|rtmps|rtsp):\/\/[^\s\r\n"'<>]+/g) as string[] || [])
+          .filter((u: string) => !u.endsWith('.html') && !u.endsWith('.php'));
+        if (urls.length > 0) {
+          content = '#EXTM3U\n' + urls.map((u, i) => `#EXTINF:-1,${prefix} ${i + 1}\n${u}`).join('\n');
+          format = 'm3u';
+        }
+      }
+      importMutation.mutate({ data: { content, format } }, {
+        onSuccess: (data) => {
+          qc.invalidateQueries({ queryKey: getListChannelsQueryKey() });
+          toast({ title: `✅ Importados ${data.imported} canales`, description: data.failed > 0 ? `${data.failed} fallaron` : undefined });
+          setImportContent(''); setShowImportDialog(false);
+        },
+        onError: () => toast({ variant: 'destructive', title: 'Error al importar' })
+      });
+    }
+  };
+
+  const handleFolderUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || []);
+    if (!files.length) return;
+    let imported = 0; let failed = 0;
+    for (const file of files) {
+      try {
+        const content = await file.text();
+        const isM3U = file.name.toLowerCase().endsWith('.m3u') || file.name.toLowerCase().endsWith('.m3u8');
+        let finalContent: string;
+        const format: 'm3u' | 'auto' = 'm3u';
+        if (isM3U) {
+          finalContent = content;
+        } else {
+          const baseName = file.name.replace(/\.[^/.]+$/, '');
+          const urlRegex = /(?:https?|rtmp|rtmps|rtsp):\/\/[^\s\r\n"'<>]+/g;
+          const urls = (content.match(urlRegex) ?? []).filter((url: string) => !url.endsWith('.html') && !url.endsWith('.php'));
+          if (urls.length === 0) { failed++; continue; }
+          let m3u = '#EXTM3U\n';
+          urls.forEach((url: string, i: number) => {
+            const channelName = urls.length === 1 ? baseName : `${baseName} ${i + 1}`;
+            m3u += `#EXTINF:-1,${channelName}\n${url}\n`;
+          });
+          finalContent = m3u;
+        }
+        await new Promise<void>(resolve => {
+          importMutation.mutate({ data: { content: finalContent, format } }, {
+            onSuccess: (data) => { imported += data.imported; failed += data.failed; resolve(); },
+            onError: () => { failed++; resolve(); }
+          });
+        });
+      } catch { failed++; }
+    }
+    qc.invalidateQueries({ queryKey: getListChannelsQueryKey() });
+    toast({ title: `Importados ${imported} canales`, description: failed > 0 ? `${failed} no se pudieron importar` : undefined });
+    e.target.value = '';
+  };
+
+  const handleTest = async (channelId: number) => {
+    setTesting(prev => ({ ...prev, [channelId]: true }));
+    setTestResults(prev => ({ ...prev, [channelId]: null }));
+    try {
+      const token = getToken('admin');
+      const resp = await fetch(`${BASE_URL}/api/channels/${channelId}/test-stream`, { method: 'POST', headers: { Authorization: `Bearer ${token}` } });
+      const data = await resp.json();
+      setTestResults(prev => ({ ...prev, [channelId]: data }));
+    } catch {
+      setTestResults(prev => ({ ...prev, [channelId]: { ok: false, status: 0, latencyMs: 0, message: 'Error de conexión' } }));
+    } finally {
+      setTesting(prev => ({ ...prev, [channelId]: false }));
+    }
+  };
+
+  const handleTestAll = async () => {
+    for (const ch of (channels || [])) { handleTest(ch.id); await new Promise(r => setTimeout(r, 200)); }
+  };
+
+  const copyUrl = (url: string) => {
+    navigator.clipboard.writeText(url).then(() => toast({ title: 'URL copiada' })).catch(() => {});
+  };
+
+  if (isLoading) return <div className="text-muted-foreground">Cargando...</div>;
+
+  const displayChannels = sortMode
+    ? sortedIds.map(id => channelsList.find(c => c.id === id)).filter(Boolean) as typeof channelsList
+    : filteredChannels;
+
+  const validCsvCount = csvRows.filter(r => r.valid).length;
+  const invalidCsvCount = csvRows.filter(r => !r.valid).length;
+
+  const canImport = importTab === 'csv'
+    ? validCsvCount > 0
+    : importContent.trim().length > 0;
+
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-wrap gap-2 justify-between items-center">
+        <h3 className="text-lg font-medium">
+          Gestión de Canales{' '}
+          <span className="text-sm text-muted-foreground font-normal">
+            ({channelSearch.trim() ? `${filteredChannels.length} de ` : ''}{channelsList.length})
+          </span>
+        </h3>
+        <div className="flex gap-2 flex-wrap">
+          {selectionMode ? (
+            <>
+              <Button size="sm" variant="outline" onClick={() => { setSelectionMode(false); setSelectedIds(new Set()); setBulkCategoryOpen(false); setBulkCategoryValue(''); }}>
+                <X className="w-4 h-4 mr-2" />Cancelar
+              </Button>
+              <Button size="sm" variant="outline" onClick={toggleSelectAll}>
+                {selectedIds.size === filteredChannels.length ? 'Deseleccionar todo' : 'Seleccionar todo'}
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={selectedIds.size === 0}
+                onClick={() => { setBulkCategoryOpen(p => !p); setBulkCategoryValue(''); }}
+                className={bulkCategoryOpen ? 'border-primary text-primary' : ''}
+              >
+                <Tag className="w-4 h-4 mr-2" />
+                Asignar categoría{selectedIds.size > 0 ? ` (${selectedIds.size})` : ''}
+              </Button>
+              <Button size="sm" variant="destructive" onClick={handleBulkDelete} disabled={selectedIds.size === 0 || bulkDeleting}>
+                {bulkDeleting ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Trash2 className="w-4 h-4 mr-2" />}
+                Eliminar {selectedIds.size > 0 ? selectedIds.size : ''} seleccionado{selectedIds.size !== 1 ? 's' : ''}
+              </Button>
+            </>
+          ) : !sortMode && (
+            <>
+              <Button size="sm" variant="outline" onClick={() => { setShowImportDialog(true); setImportTab('csv'); setImportContent(''); setCsvRows([]); setCsvFileName(''); }}>
+                <Upload className="w-4 h-4 mr-2" />Importar canales
+              </Button>
+              <Button size="sm" variant="outline" onClick={() => folderRef.current?.click()}><FolderOpen className="w-4 h-4 mr-2" />Subir Carpeta</Button>
+              <input ref={folderRef} type="file" className="hidden" multiple onChange={handleFolderUpload}
+                {...({ webkitdirectory: '', directory: '' } as any)} />
+              {channelsList.length > 0 && (
+                <>
+                  <Button size="sm" variant="outline" onClick={handleTestAll}><Wifi className="w-4 h-4 mr-2" />Probar Todos</Button>
+                  <Button size="sm" variant="outline" onClick={() => { setSelectionMode(true); setSelectedIds(new Set()); }}>
+                    <Trash2 className="w-4 h-4 mr-2" />Seleccionar
+                  </Button>
+                </>
+              )}
+              <Button size="sm" onClick={() => setShowForm(!showForm)}><Plus className="w-4 h-4 mr-2" />Nuevo Canal</Button>
+            </>
+          )}
+          {channelsList.length > 1 && !selectionMode && (
+            <Button size="sm" variant={sortMode ? 'default' : 'outline'} onClick={toggleSortMode}>
+              <ArrowUpDown className="w-4 h-4 mr-2" />{sortMode ? 'Listo' : 'Reordenar'}
+              {saving && <Loader2 className="w-3 h-3 ml-2 animate-spin" />}
+            </Button>
+          )}
+          {existingCategories.length > 0 && !sortMode && !selectionMode && (
+            <Button size="sm" variant={catOrderMode ? 'default' : 'outline'} onClick={catOrderMode ? saveCatOrder : openCatOrderMode} disabled={catOrderSaving}>
+              {catOrderSaving ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Tag className="w-4 h-4 mr-2" />}
+              {catOrderMode ? 'Guardar orden' : 'Orden categorías'}
+            </Button>
+          )}
+          {catOrderMode && (
+            <Button size="sm" variant="ghost" onClick={() => setCatOrderMode(false)}>
+              <X className="w-4 h-4 mr-1" />Cancelar
+            </Button>
+          )}
+        </div>
+      </div>
+
+      {bulkCategoryOpen && selectionMode && (
+        <div className="flex flex-wrap gap-2 items-center p-3 rounded-lg border border-primary/30 bg-primary/5">
+          <Tag className="w-4 h-4 text-primary shrink-0" />
+          <span className="text-sm font-medium text-primary">Asignar categoría a {selectedIds.size} canal{selectedIds.size !== 1 ? 'es' : ''}:</span>
+          <div className="flex gap-2 flex-1 min-w-[240px]">
+            <div className="relative flex-1">
+              <Input
+                list="bulk-category-options"
+                value={bulkCategoryValue}
+                onChange={e => setBulkCategoryValue(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter') handleBulkCategory(); if (e.key === 'Escape') { setBulkCategoryOpen(false); setBulkCategoryValue(''); } }}
+                placeholder="Nombre de categoría (vacío = quitar)"
+                className="bg-background h-8 text-sm"
+                autoFocus
+              />
+              <datalist id="bulk-category-options">
+                {existingCategories.map((cat: string) => <option key={cat} value={cat} />)}
+              </datalist>
+            </div>
+            <Button size="sm" onClick={handleBulkCategory} disabled={bulkCategorySaving} className="h-8">
+              {bulkCategorySaving ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Aplicar'}
+            </Button>
+            <Button size="sm" variant="ghost" onClick={() => { setBulkCategoryOpen(false); setBulkCategoryValue(''); }} className="h-8">
+              <X className="w-4 h-4" />
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {catOrderMode && (
+        <div className="rounded-lg border border-primary/40 bg-primary/5 p-4 space-y-3">
+          <div className="flex items-center gap-2">
+            <Tag className="w-4 h-4 text-primary" />
+            <p className="text-sm font-medium text-primary">Orden de categorías en el carrusel</p>
+            <span className="text-xs text-muted-foreground ml-auto">Arrastra para reordenar</span>
+          </div>
+          {catOrder.length === 0 ? (
+            <p className="text-sm text-muted-foreground text-center py-4">No hay categorías todavía</p>
+          ) : (
+            <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleCatOrderDragEnd}>
+              <SortableContext items={catOrder} strategy={verticalListSortingStrategy}>
+                <div className="space-y-1.5">
+                  {catOrder.map(cat => (
+                    <SortableCategoryItem key={cat} id={cat} label={cat} />
+                  ))}
+                </div>
+              </SortableContext>
+            </DndContext>
+          )}
+        </div>
+      )}
+
+      {sortMode && !catOrderMode && (
+        <p className="text-xs text-muted-foreground flex items-center gap-1">
+          <GripVertical className="w-3 h-3" />
+          Arrastra las filas para cambiar el orden. Se guarda automáticamente.
+        </p>
+      )}
+
+      {!sortMode && !catOrderMode && channelsList.length > 0 && (
+        <div className="relative">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
+          <Input
+            value={channelSearch}
+            onChange={e => setChannelSearch(e.target.value)}
+            placeholder="Buscar por nombre o categoría…"
+            className="pl-9 pr-9 bg-background"
+          />
+          {channelSearch && (
+            <button onClick={() => setChannelSearch('')}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
+              <X className="w-3.5 h-3.5" />
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* Import Dialog */}
+      <Dialog open={showImportDialog} onOpenChange={(o) => { if (!o) { setShowImportDialog(false); setImportContent(''); setCsvRows([]); setCsvFileName(''); } }}>
+        <DialogContent className="bg-card border-border max-w-3xl max-h-[90vh] flex flex-col overflow-hidden">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2"><Upload className="w-5 h-5" />Importar Canales</DialogTitle>
+          </DialogHeader>
+
+          {/* Tabs */}
+          <div className="flex gap-1 bg-background rounded-lg p-1 border border-border">
+            {([['csv', '📋 CSV'], ['m3u', '📺 M3U / Playlist'], ['urls', '🔗 URLs sueltas']] as [ImportTab, string][]).map(([tab, label]) => (
+              <button
+                key={tab}
+                onClick={() => { setImportTab(tab); setImportContent(''); setCsvRows([]); setCsvFileName(''); }}
+                className={`flex-1 py-1.5 px-3 rounded-md text-sm font-medium transition-all ${importTab === tab ? 'bg-primary text-primary-foreground shadow' : 'text-muted-foreground hover:text-foreground'}`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+
+          <div className="flex-1 overflow-y-auto space-y-4 min-h-0">
+            {/* CSV Tab */}
+            {importTab === 'csv' && (
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <p className="text-sm text-muted-foreground">Sube un archivo CSV o pega el contenido. Columnas reconocidas: <code className="text-xs bg-muted px-1 rounded">name, url, category, logo</code></p>
+                  <Button size="sm" variant="ghost" className="text-xs shrink-0" onClick={downloadCsvTemplate}>
+                    <Download className="w-3 h-3 mr-1" />Plantilla
+                  </Button>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <button
+                    onClick={() => csvFileRef.current?.click()}
+                    className="flex flex-col items-center justify-center gap-2 border-2 border-dashed border-border rounded-lg p-4 hover:border-primary/50 hover:bg-muted/30 transition-all cursor-pointer text-center"
+                  >
+                    <FolderOpen className="w-8 h-8 text-muted-foreground" />
+                    <div>
+                      <p className="text-sm font-medium">{csvFileName || 'Subir archivo CSV'}</p>
+                      <p className="text-xs text-muted-foreground mt-0.5">.csv · separado por comas o punto y coma</p>
+                    </div>
+                  </button>
+                  <input ref={csvFileRef} type="file" accept=".csv,.txt" className="hidden" onChange={handleCsvFileUpload} />
+
+                  <div className="border border-border rounded-lg overflow-hidden">
+                    <Textarea
+                      rows={4}
+                      placeholder={'name,url,category,logo\nCNN,http://...,Noticias,\nESPN,http://...,Deportes,'}
+                      value={importContent}
+                      onChange={e => handleCsvPaste(e.target.value)}
+                      className="bg-background font-mono text-xs border-0 resize-none h-full focus-visible:ring-0"
+                    />
+                  </div>
+                </div>
+
+                {csvRows.length > 0 && (
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-3 text-sm">
+                      <span className="text-green-400 font-medium flex items-center gap-1"><CheckCircle2 className="w-4 h-4" />{validCsvCount} válidos</span>
+                      {invalidCsvCount > 0 && <span className="text-red-400 font-medium flex items-center gap-1"><XCircle className="w-4 h-4" />{invalidCsvCount} con errores</span>}
+                      <span className="text-muted-foreground ml-auto text-xs">Vista previa</span>
+                    </div>
+                    <div className="border border-border rounded-lg overflow-hidden max-h-52 overflow-y-auto">
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead className="w-6 py-2"></TableHead>
+                            <TableHead className="py-2">Nombre</TableHead>
+                            <TableHead className="py-2">URL</TableHead>
+                            <TableHead className="py-2">Categoría</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {csvRows.slice(0, 50).map((row, i) => (
+                            <TableRow key={i} className={!row.valid ? 'bg-red-500/5' : ''}>
+                              <TableCell className="py-1.5">
+                                {row.valid
+                                  ? <CheckCircle2 className="w-3.5 h-3.5 text-green-400" />
+                                  : <span title={row.error}><XCircle className="w-3.5 h-3.5 text-red-400" /></span>}
+                              </TableCell>
+                              <TableCell className="py-1.5 font-medium text-xs">{row.name}</TableCell>
+                              <TableCell className="py-1.5 text-xs font-mono text-muted-foreground max-w-[180px] truncate">{row.streamUrl || <span className="italic text-red-400">vacío</span>}</TableCell>
+                              <TableCell className="py-1.5 text-xs text-muted-foreground">{row.category || '—'}</TableCell>
+                            </TableRow>
+                          ))}
+                          {csvRows.length > 50 && (
+                            <TableRow><TableCell colSpan={4} className="text-center text-xs text-muted-foreground py-2">... y {csvRows.length - 50} más</TableCell></TableRow>
+                          )}
+                        </TableBody>
+                      </Table>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* M3U Tab */}
+            {importTab === 'm3u' && (
+              <div className="space-y-3">
+                <p className="text-sm text-muted-foreground">Pega el contenido de tu lista M3U o M3U8:</p>
+                <Textarea
+                  rows={10}
+                  placeholder={'#EXTM3U\n#EXTINF:-1 group-title="Noticias" tvg-logo="https://logo.com/cnn.png",CNN\nhttp://ejemplo.com/cnn.m3u8\n#EXTINF:-1 group-title="Deportes",ESPN\nhttp://ejemplo.com/espn.m3u8'}
+                  value={importContent}
+                  onChange={e => setImportContent(e.target.value)}
+                  className="bg-background font-mono text-xs"
+                />
+                {importContent && (
+                  <p className="text-xs text-muted-foreground">
+                    Se detectaron aprox. {(importContent.match(/^https?:\/\//gm) || []).length + (importContent.match(/^rtmp:\/\//gm) || []).length} canales
+                  </p>
+                )}
+              </div>
+            )}
+
+            {/* URLs Tab */}
+            {importTab === 'urls' && (
+              <div className="space-y-3">
+                <div className="flex items-center justify-between gap-2">
+                  <p className="text-sm text-muted-foreground flex-1">Pega URLs o sube un archivo .txt — una por línea.</p>
+                  <Button size="sm" variant="ghost" className="text-xs shrink-0" onClick={() => urlsFileRef.current?.click()}>
+                    <FolderOpen className="w-3 h-3 mr-1" />Subir .txt
+                  </Button>
+                  <input ref={urlsFileRef} type="file" accept=".txt,.text" className="hidden" onChange={async e => {
+                    const f = e.target.files?.[0]; if (!f) return;
+                    setImportContent(await f.text());
+                    e.target.value = '';
+                  }} />
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <label className="text-xs text-muted-foreground whitespace-nowrap">Prefijo de nombre:</label>
+                  <Input
+                    value={urlsPrefix}
+                    onChange={e => setUrlsPrefix(e.target.value)}
+                    placeholder="Canal"
+                    className="h-7 text-xs w-36"
+                  />
+                  <span className="text-xs text-muted-foreground">→ <span className="text-foreground font-medium">{(urlsPrefix.trim() || 'Canal')} 1</span>, <span className="text-foreground font-medium">{(urlsPrefix.trim() || 'Canal')} 2</span>…</span>
+                </div>
+
+                <Textarea
+                  rows={9}
+                  placeholder={'http://ejemplo.com/canal1.m3u8\nhttp://ejemplo.com/canal2.m3u8\nrtmp://ejemplo.com/live/stream3'}
+                  value={importContent}
+                  onChange={e => setImportContent(e.target.value)}
+                  className="bg-background font-mono text-xs"
+                />
+                {importContent && (() => {
+                  const count = (importContent.match(/(?:https?|rtmp|rtmps|rtsp):\/\/[^\s\r\n"'<>]+/g) as string[] || []).filter((u: string) => !u.endsWith('.html') && !u.endsWith('.php')).length;
+                  const prefix = urlsPrefix.trim() || 'Canal';
+                  return count > 0 ? (
+                    <p className="text-xs text-muted-foreground">
+                      <span className="text-green-400 font-medium">{count} URL{count !== 1 ? 's' : ''} detectada{count !== 1 ? 's' : ''}</span>
+                      {' → '}{prefix} 1, {prefix} 2{count > 2 ? ` … ${prefix} ${count}` : ''}
+                    </p>
+                  ) : <p className="text-xs text-amber-400">No se detectaron URLs válidas</p>;
+                })()}
+              </div>
+            )}
+          </div>
+
+          <DialogFooter className="gap-2 pt-2 border-t border-border">
+            <Button variant="outline" onClick={() => { setShowImportDialog(false); setImportContent(''); setCsvRows([]); setCsvFileName(''); }}>
+              Cancelar
+            </Button>
+            <Button onClick={handleImport} disabled={importMutation.isPending || !canImport} className="min-w-32">
+              {importMutation.isPending
+                ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Importando...</>
+                : <><Upload className="w-4 h-4 mr-2" />
+                  {importTab === 'csv' ? `Importar ${validCsvCount} canal${validCsvCount !== 1 ? 'es' : ''}` : 'Importar'}
+                </>
+              }
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {!sortMode && showForm && (
+        <Card className="bg-background border-border p-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <Input placeholder="Nombre del canal *" value={newCh.name} onChange={e => setNewCh(p => ({ ...p, name: e.target.value }))} />
+            <Input placeholder="URL del stream *" value={newCh.streamUrl} onChange={e => setNewCh(p => ({ ...p, streamUrl: e.target.value }))} />
+            <Input placeholder="Categoría" value={newCh.category} onChange={e => setNewCh(p => ({ ...p, category: e.target.value }))} />
+            <Input placeholder="URL del logo" value={newCh.logo} onChange={e => setNewCh(p => ({ ...p, logo: e.target.value }))} />
+          </div>
+          <div className="flex gap-2 mt-3">
+            <Button onClick={handleCreate} disabled={createMutation.isPending}>{createMutation.isPending ? 'Creando...' : 'Crear Canal'}</Button>
+            <Button variant="outline" onClick={() => setShowForm(false)}>Cancelar</Button>
+          </div>
+        </Card>
+      )}
+
+      {!catOrderMode && (
+      <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+        <SortableContext items={sortMode ? sortedIds : channelsList.map(c => c.id)} strategy={verticalListSortingStrategy}>
+          <div className="overflow-x-auto rounded-lg border border-border">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="w-8 pr-0">
+                    {selectionMode
+                      ? <input type="checkbox"
+                          checked={channelsList.length > 0 && selectedIds.size === channelsList.length}
+                          onChange={toggleSelectAll}
+                          className="w-4 h-4 cursor-pointer accent-primary" />
+                      : null
+                    }
+                  </TableHead>
+                  <TableHead>Canal</TableHead>
+                  <TableHead>Categoría</TableHead>
+                  <TableHead>Stream</TableHead>
+                  {!selectionMode && !sortMode && <TableHead>Test</TableHead>}
+                  <TableHead className="text-right">{selectionMode ? '' : 'Acciones'}</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {displayChannels.map(ch => (
+                  <SortableChannelRow
+                    key={ch.id}
+                    ch={ch}
+                    testing={!!testing[ch.id]}
+                    testResult={testResults[ch.id]}
+                    onTest={() => handleTest(ch.id)}
+                    onEdit={() => setEditCh({ id: ch.id, name: ch.name, streamUrl: ch.streamUrl, category: ch.category || '', logo: ch.logo || '' })}
+                    onDelete={() => handleDelete(ch.id)}
+                    selected={selectedIds.has(ch.id)}
+                    onSelect={toggleSelect}
+                    selectionMode={selectionMode}
+                    existingCategories={existingCategories}
+                    onCategoryChange={handleQuickCategory}
+                  />
+                ))}
+                {channelsList.length === 0 && (
+                  <TableRow><TableCell colSpan={6} className="text-center text-muted-foreground py-8">Sin canales aún</TableCell></TableRow>
+                )}
+              </TableBody>
+            </Table>
+          </div>
+        </SortableContext>
+      </DndContext>
+      )}
+
+      <Dialog open={!!editCh} onOpenChange={(o) => !o && setEditCh(null)}>
+        <DialogContent className="bg-card border-border max-w-lg">
+          <DialogHeader><DialogTitle>Editar Canal</DialogTitle></DialogHeader>
+          {editCh && (
+            <div className="space-y-3">
+              <Input placeholder="Nombre *" value={editCh.name} onChange={e => setEditCh(p => p ? { ...p, name: e.target.value } : p)} />
+              <Input placeholder="URL del stream *" value={editCh.streamUrl} onChange={e => setEditCh(p => p ? { ...p, streamUrl: e.target.value } : p)} />
+              <Input placeholder="Categoría" value={editCh.category} onChange={e => setEditCh(p => p ? { ...p, category: e.target.value } : p)} />
+              <Input placeholder="URL del logo" value={editCh.logo} onChange={e => setEditCh(p => p ? { ...p, logo: e.target.value } : p)} />
+            </div>
+          )}
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setEditCh(null)}>Cancelar</Button>
+            <Button onClick={handleUpdate} disabled={updateMutation.isPending}>{updateMutation.isPending ? 'Guardando...' : 'Guardar'}</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
+
+const VIDEO_EXTENSIONS = new Set(['mp4','mkv','avi','mov','wmv','flv','m4v','webm','ts','m3u8','mpg','mpeg','ogv','3gp','f4v','rmvb','divx','vob']);
+
+function cleanMovieName(raw: string): string {
+  let name = raw.replace(/\.[^.]+$/, '');
+  name = name.replace(/\b(19|20)\d{2}\b/g, '');
+  name = name.replace(/\b(2160p|1080p|1080i|720p|480p|576p|4K|4k|UHD|HD|SDR|HDR10?|DolbyVision|DV)\b/gi, '');
+  name = name.replace(/\b(BluRay|Blu-Ray|BDRip|BRRip|WEBRip|WEB-DL|WEB|HDRip|DVDRip|DVD|HDTV|PDVD|VHS|CAM|TS|SCR|HC|REMUX|HQ|HQ-TS)\b/gi, '');
+  name = name.replace(/\b(x264|x265|h264|h265|HEVC|AVC|DivX|XviD|AV1|VP9|MPEG2|H\.264|H\.265|10bit|8bit)\b/gi, '');
+  name = name.replace(/\b(AAC|AC3|DTS|DD5|DD2|MP3|FLAC|TrueHD|Atmos|DDP|EAC3|5\.1|7\.1|2\.0|6CH|8CH)\b/gi, '');
+  name = name.replace(/\b(MULTI|VOST|VOSTFR|FRENCH|ENGLISH|SPANISH|LATINO|ESP|ENG|SPA|LAT|CAST|SUB|SUBS|DUBBED|DUAL|MULTi)\b/gi, '');
+  name = name.replace(/\b(YIFY|YTS|RARBG|EZTV|FGT|MKV|ION10|SPARKS|GECKOS|NTG|ETTV|SHITBOX)\b/gi, '');
+  name = name.replace(/[\[\](){}]/g, ' ');
+  name = name.replace(/[-_.+]+/g, ' ');
+  name = name.replace(/\s+/g, ' ').trim();
+  name = name.replace(/\b\w/g, l => l.toUpperCase());
+  return name || raw;
+}
+
+function parseNfo(content: string): { title?: string; poster?: string; filePath?: string } {
+  const title = content.match(/<title>([^<]+)<\/title>/i)?.[1]?.trim();
+  const thumb = content.match(/<thumb[^>]*>([^<]+)<\/thumb>/i)?.[1]?.trim()
+    || content.match(/<art[^>]*>[\s\S]*?<poster>([^<]+)<\/poster>/i)?.[1]?.trim();
+  const fileinfo = content.match(/<fileinfo>[\s\S]*?<\/fileinfo>/i);
+  const url = content.match(/https?:\/\/[^\s<"']+\.(mp4|mkv|avi|mov|ts|m3u8|mpg|mpeg|webm)[^\s<"']*/i)?.[0];
+  return { title: title || undefined, poster: thumb || undefined, filePath: url || undefined };
+}
+
+function parseStrmOrTxt(content: string, filename: string): { title: string; filePath?: string } {
+  const lines = content.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+  const url = lines.find(l => /^(https?|rtmp|rtsp|ftp):\/\//.test(l) || VIDEO_EXTENSIONS.has(l.split('.').pop()?.toLowerCase() || ''));
+  return { title: cleanMovieName(filename), filePath: url };
+}
+
+function parseM3UMovies(content: string): { title: string; filePath: string; poster?: string }[] {
+  const lines = content.split('\n').map(l => l.trim());
+  const results: { title: string; filePath: string; poster?: string }[] = [];
+  let currentName = ''; let currentPoster = '';
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    if (line.startsWith('#EXTINF')) {
+      const nameMatch = line.match(/,(.+)$/); const logoMatch = line.match(/tvg-logo="([^"]+)"/);
+      currentName = nameMatch ? nameMatch[1].trim() : '';
+      currentPoster = logoMatch ? logoMatch[1] : '';
+    } else if (/^(https?|rtmp|rtsp):\/\//.test(line)) {
+      if (currentName) results.push({ title: currentName, filePath: line, poster: currentPoster || undefined });
+      currentName = ''; currentPoster = '';
+    }
+  }
+  return results;
+}
+
+type DetectedMovie = {
+  _id: string;
+  title: string;
+  filePath: string;
+  poster: string;
+  selected: boolean;
+  searching: boolean;
+  file?: File;
+  uploadStatus?: 'pending' | 'uploading' | 'done' | 'error';
+  uploadProgress?: number;
+};
+
+function MoviesManager() {
+  const qc = useQueryClient();
+  const { toast } = useToast();
+  const { data: movies, isLoading } = useListMovies(undefined, { query: { queryKey: getListMoviesQueryKey() } });
+  const createMutation = useCreateMovie();
+  const updateMutation = useUpdateMovie();
+  const deleteMutation = useDeleteMovie();
+
+  const [showForm, setShowForm] = useState(false);
+  const [newMv, setNewMv] = useState({ title: '', filePath: '', category: '', description: '', poster: '' });
+  const [editMv, setEditMv] = useState<{ id: number; title: string; filePath: string; category: string; description: string; poster: string } | null>(null);
+  const [sortMode, setSortMode] = useState(false);
+  const [sortedIds, setSortedIds] = useState<number[]>([]);
+  const [saving, setSaving] = useState(false);
+  const [showFolderPreview, setShowFolderPreview] = useState(false);
+  const [detectedMovies, setDetectedMovies] = useState<DetectedMovie[]>([]);
+  const [importing, setImporting] = useState(false);
+  const folderRef = useRef<HTMLInputElement>(null);
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+    useSensor(TouchSensor, { activationConstraint: { delay: 150, tolerance: 5 } })
+  );
+
+  const moviesList = movies || [];
+
+  const toggleSortMode = () => {
+    if (!sortMode) setSortedIds(moviesList.map(m => m.id));
+    setSortMode(p => !p);
+  };
+
+  const handleDragEnd = async (event: DragEndEvent) => {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+    const oldIndex = sortedIds.indexOf(active.id as number);
+    const newIndex = sortedIds.indexOf(over.id as number);
+    const newOrder = arrayMove(sortedIds, oldIndex, newIndex);
+    setSortedIds(newOrder);
+    setSaving(true);
+    try {
+      const token = getToken('admin');
+      await fetch(`${BASE_URL}/api/movies/reorder`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids: newOrder }),
+      });
+      qc.invalidateQueries({ queryKey: getListMoviesQueryKey() });
+    } catch {
+      toast({ variant: 'destructive', title: 'Error al guardar orden' });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleCreate = () => {
+    if (!newMv.title || !newMv.filePath) { toast({ variant: 'destructive', title: 'Título y URL son requeridos' }); return; }
+    createMutation.mutate({ data: { title: newMv.title, filePath: newMv.filePath, category: newMv.category || undefined, description: newMv.description || undefined, poster: newMv.poster || undefined } }, {
+      onSuccess: () => {
+        qc.invalidateQueries({ queryKey: getListMoviesQueryKey() });
+        toast({ title: 'Película creada' });
+        setNewMv({ title: '', filePath: '', category: '', description: '', poster: '' }); setShowForm(false);
+      },
+      onError: () => toast({ variant: 'destructive', title: 'Error al crear película' })
+    });
+  };
+
+  const handleUpdate = () => {
+    if (!editMv || !editMv.title || !editMv.filePath) { toast({ variant: 'destructive', title: 'Título y URL son requeridos' }); return; }
+    updateMutation.mutate({ id: editMv.id, data: { title: editMv.title, filePath: editMv.filePath, category: editMv.category || undefined, description: editMv.description || undefined, poster: editMv.poster || undefined } }, {
+      onSuccess: () => {
+        qc.invalidateQueries({ queryKey: getListMoviesQueryKey() });
+        toast({ title: 'Película actualizada' });
+        setEditMv(null);
+      },
+      onError: () => toast({ variant: 'destructive', title: 'Error al actualizar película' })
+    });
+  };
+
+  const handleDelete = (id: number) => {
+    if (!confirm('¿Eliminar esta película?')) return;
+    deleteMutation.mutate({ id }, {
+      onSuccess: () => { qc.invalidateQueries({ queryKey: getListMoviesQueryKey() }); toast({ title: 'Película eliminada' }); }
+    });
+  };
+
+  const updateDetected = (id: string, patch: Partial<DetectedMovie>) =>
+    setDetectedMovies(prev => prev.map(m => m._id === id ? { ...m, ...patch } : m));
+
+  const fetchPoster = async (id: string, title: string) => {
+    updateDetected(id, { searching: true });
+    try {
+      const token = getToken('admin');
+      const r = await fetch(`${BASE_URL}/api/movies/search-poster?q=${encodeURIComponent(title)}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const data = await r.json();
+      updateDetected(id, {
+        searching: false,
+        poster: data.poster || '',
+        title: data.title || title,
+      });
+    } catch {
+      updateDetected(id, { searching: false });
+    }
+  };
+
+  const handleFolderUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || []);
+    if (!files.length) return;
+    e.target.value = '';
+
+    const detected: DetectedMovie[] = [];
+    const nfoMap: Record<string, { title?: string; poster?: string; filePath?: string }> = {};
+
+    const nfoFiles = files.filter(f => f.name.toLowerCase().endsWith('.nfo'));
+    await Promise.all(nfoFiles.map(async f => {
+      const content = await f.text();
+      const baseName = f.name.replace(/\.nfo$/i, '').toLowerCase();
+      nfoMap[baseName] = parseNfo(content);
+    }));
+
+    for (const file of files) {
+      const ext = file.name.split('.').pop()?.toLowerCase() || '';
+      const baseName = file.name.replace(/\.[^.]+$/, '').toLowerCase();
+      const id = `${Date.now()}-${Math.random()}`;
+
+      if (ext === 'nfo') continue;
+
+      if (ext === 'm3u' || ext === 'm3u8') {
+        const content = await file.text();
+        const entries = parseM3UMovies(content);
+        for (const e of entries) {
+          detected.push({ _id: `${id}-${detected.length}`, title: e.title, filePath: e.filePath, poster: e.poster || '', selected: true, searching: false });
+        }
+        continue;
+      }
+
+      if (ext === 'strm' || ext === 'txt') {
+        const content = await file.text();
+        const parsed = parseStrmOrTxt(content, file.name);
+        if (parsed.filePath) {
+          const nfo = nfoMap[baseName] || {};
+          detected.push({ _id: id, title: nfo.title || parsed.title, filePath: nfo.filePath || parsed.filePath, poster: nfo.poster || '', selected: true, searching: false });
+        }
+        continue;
+      }
+
+      if (VIDEO_EXTENSIONS.has(ext)) {
+        const nfo = nfoMap[baseName] || {};
+        if (nfo.filePath) {
+          detected.push({ _id: id, title: nfo.title || cleanMovieName(file.name), filePath: nfo.filePath, poster: nfo.poster || '', selected: true, searching: false });
+        } else {
+          detected.push({ _id: id, title: nfo.title || cleanMovieName(file.name), filePath: '', poster: nfo.poster || '', selected: true, searching: false, file, uploadStatus: 'pending', uploadProgress: 0 });
+        }
+        continue;
+      }
+    }
+
+    if (!detected.length) {
+      toast({ variant: 'destructive', title: 'No se encontraron películas en la carpeta' });
+      return;
+    }
+
+    setDetectedMovies(detected);
+    setShowFolderPreview(true);
+  };
+
+  const uploadVideoFile = async (id: string, file: File): Promise<string | null> => {
+    updateDetected(id, { uploadStatus: 'uploading', uploadProgress: 10 });
+    try {
+      const r1 = await fetch(`${BASE_URL}/api/storage/uploads/request-url`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: file.name, size: file.size, contentType: file.type || 'video/mp4' }),
+      });
+      if (!r1.ok) throw new Error('No se pudo obtener URL de subida');
+      const { uploadURL, objectPath } = await r1.json();
+      updateDetected(id, { uploadProgress: 40 });
+
+      const r2 = await fetch(uploadURL, {
+        method: 'PUT',
+        body: file,
+        headers: { 'Content-Type': file.type || 'video/mp4' },
+      });
+      if (!r2.ok) throw new Error('Error al subir el archivo');
+      updateDetected(id, { uploadStatus: 'done', uploadProgress: 100, filePath: `/api/storage${objectPath}` });
+      return `/api/storage${objectPath}`;
+    } catch (err) {
+      updateDetected(id, { uploadStatus: 'error', uploadProgress: 0 });
+      return null;
+    }
+  };
+
+  const handleBulkCreate = async () => {
+    const toCreate = detectedMovies.filter(m => m.selected && m.title);
+    if (!toCreate.length) { toast({ variant: 'destructive', title: 'Selecciona al menos una película' }); return; }
+    setImporting(true);
+    let ok = 0;
+
+    for (const m of toCreate) {
+      let filePath = m.filePath;
+      if (m.file && (m.uploadStatus === 'pending' || m.uploadStatus === 'error')) {
+        filePath = (await uploadVideoFile(m._id, m.file)) || '';
+      }
+      if (!filePath) continue;
+
+      await new Promise<void>(resolve => {
+        createMutation.mutate({ data: { title: m.title, filePath, poster: m.poster || undefined, category: undefined, description: undefined } }, {
+          onSuccess: () => { ok++; resolve(); },
+          onSettled: () => resolve(),
+        });
+      });
+    }
+
+    qc.invalidateQueries({ queryKey: getListMoviesQueryKey() });
+    setImporting(false);
+    setShowFolderPreview(false);
+    setDetectedMovies([]);
+    toast({ title: `${ok} película(s) importada(s)` });
+  };
+
+  if (isLoading) return <div className="text-muted-foreground">Cargando...</div>;
+
+  const displayMovies = sortMode
+    ? sortedIds.map(id => moviesList.find(m => m.id === id)).filter(Boolean) as typeof moviesList
+    : moviesList;
+
+  return (
+    <div className="space-y-4">
+      <div className="flex justify-between items-center flex-wrap gap-2">
+        <h3 className="text-lg font-medium">Gestión de Películas</h3>
+        <div className="flex gap-2 flex-wrap">
+          {!sortMode && <>
+            <Button size="sm" variant="outline" onClick={() => folderRef.current?.click()}>
+              <FolderOpen className="w-4 h-4 mr-2" />Subir Carpeta
+            </Button>
+            <input ref={folderRef} type="file" className="hidden" multiple onChange={handleFolderUpload}
+              {...({ webkitdirectory: '', directory: '' } as any)} />
+            <Button size="sm" onClick={() => setShowForm(!showForm)}><Plus className="w-4 h-4 mr-2" />Nueva Película</Button>
+          </>}
+          {moviesList.length > 1 && (
+            <Button size="sm" variant={sortMode ? 'default' : 'outline'} onClick={toggleSortMode}>
+              <ArrowUpDown className="w-4 h-4 mr-2" />{sortMode ? 'Listo' : 'Reordenar'}
+              {saving && <Loader2 className="w-3 h-3 ml-2 animate-spin" />}
+            </Button>
+          )}
+        </div>
+      </div>
+
+      {sortMode && (
+        <p className="text-xs text-muted-foreground flex items-center gap-1">
+          <GripVertical className="w-3 h-3" />
+          Arrastra las filas para cambiar el orden. Se guarda automáticamente.
+        </p>
+      )}
+
+      {!sortMode && showForm && (
+        <Card className="bg-background border-border p-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <Input placeholder="Título *" value={newMv.title} onChange={e => setNewMv(p => ({ ...p, title: e.target.value }))} />
+            <Input placeholder="URL del archivo *" value={newMv.filePath} onChange={e => setNewMv(p => ({ ...p, filePath: e.target.value }))} />
+            <Input placeholder="URL del poster" value={newMv.poster} onChange={e => setNewMv(p => ({ ...p, poster: e.target.value }))} />
+            <Input placeholder="Categoría" value={newMv.category} onChange={e => setNewMv(p => ({ ...p, category: e.target.value }))} />
+            <Input placeholder="Descripción" value={newMv.description} onChange={e => setNewMv(p => ({ ...p, description: e.target.value }))} />
+          </div>
+          <div className="flex gap-2 mt-3">
+            <Button onClick={handleCreate} disabled={createMutation.isPending}>{createMutation.isPending ? 'Creando...' : 'Crear'}</Button>
+            <Button variant="outline" onClick={() => setShowForm(false)}>Cancelar</Button>
+          </div>
+        </Card>
+      )}
+
+      <Dialog open={showFolderPreview} onOpenChange={o => !o && setShowFolderPreview(false)}>
+        <DialogContent className="bg-card border-border max-w-4xl max-h-[90vh] flex flex-col">
+          <DialogHeader>
+            <DialogTitle>Películas detectadas ({detectedMovies.filter(m => m.selected).length} / {detectedMovies.length})</DialogTitle>
+          </DialogHeader>
+          <p className="text-xs text-muted-foreground">
+            Los archivos de video se subirán automáticamente al hacer clic en Importar. Edita el nombre o búsca el póster antes de importar.
+          </p>
+          {detectedMovies.some(m => m.file) && (
+            <div className="flex items-center gap-2 text-xs bg-primary/10 border border-primary/20 rounded-lg px-3 py-2">
+              <Upload className="w-3.5 h-3.5 text-primary flex-shrink-0" />
+              <span className="text-primary font-medium">
+                {detectedMovies.filter(m => m.file && m.selected).length} archivo(s) de video se subirán al servidor al importar
+              </span>
+            </div>
+          )}
+          <div className="overflow-y-auto flex-1 space-y-3 pr-1 mt-2">
+            {detectedMovies.map(mv => (
+              <div key={mv._id} className={`flex gap-3 items-start p-3 rounded-lg border transition-colors ${mv.selected ? 'border-border bg-background' : 'border-border/30 bg-background/30 opacity-50'}`}>
+                <input type="checkbox" className="mt-1 accent-primary" checked={mv.selected}
+                  onChange={e => updateDetected(mv._id, { selected: e.target.checked })} />
+                <div className="w-12 h-16 flex-shrink-0 rounded overflow-hidden bg-muted flex items-center justify-center">
+                  {mv.poster
+                    ? <img src={mv.poster} alt="" className="w-full h-full object-cover" onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+                    : <Film className="w-6 h-6 text-muted-foreground/40" />}
+                </div>
+                <div className="flex-1 min-w-0 space-y-2">
+                  <div className="flex gap-2 items-center">
+                    <Input className="h-8 text-sm font-medium flex-1" value={mv.title}
+                      onChange={e => updateDetected(mv._id, { title: e.target.value })} placeholder="Título *" />
+                    <Button size="sm" variant="outline" className="h-8 text-xs flex-shrink-0"
+                      disabled={mv.searching || !mv.title}
+                      onClick={() => fetchPoster(mv._id, mv.title)}>
+                      {mv.searching ? <Loader2 className="w-3 h-3 animate-spin" /> : 'Buscar'}
+                    </Button>
+                  </div>
+
+                  {mv.file ? (
+                    <div className="space-y-1">
+                      <div className="flex items-center gap-2">
+                        <span className="text-[10px] font-mono text-muted-foreground truncate flex-1">{mv.file.name} ({(mv.file.size / 1024 / 1024).toFixed(1)} MB)</span>
+                        {mv.uploadStatus === 'pending' && <span className="text-[10px] px-1.5 py-0.5 rounded bg-secondary text-muted-foreground">Pendiente</span>}
+                        {mv.uploadStatus === 'uploading' && (
+                          <span className="flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded bg-primary/10 text-primary">
+                            <Loader2 className="w-2.5 h-2.5 animate-spin" />Subiendo…
+                          </span>
+                        )}
+                        {mv.uploadStatus === 'done' && <span className="text-[10px] px-1.5 py-0.5 rounded bg-green-500/10 text-green-600">✓ Subido</span>}
+                        {mv.uploadStatus === 'error' && <span className="text-[10px] px-1.5 py-0.5 rounded bg-destructive/10 text-destructive">✗ Error</span>}
+                      </div>
+                      {mv.uploadStatus === 'uploading' && (
+                        <div className="w-full h-1 bg-secondary rounded-full overflow-hidden">
+                          <div className="h-full bg-primary transition-all duration-500" style={{ width: `${mv.uploadProgress || 0}%` }} />
+                        </div>
+                      )}
+                      {mv.uploadStatus === 'done' && mv.filePath && (
+                        <p className="text-[10px] font-mono text-muted-foreground truncate">{mv.filePath}</p>
+                      )}
+                    </div>
+                  ) : (
+                    <Input className="h-7 text-xs font-mono" value={mv.filePath}
+                      onChange={e => updateDetected(mv._id, { filePath: e.target.value })} placeholder="URL del video *" />
+                  )}
+
+                  <Input className="h-7 text-xs" value={mv.poster}
+                    onChange={e => updateDetected(mv._id, { poster: e.target.value })} placeholder="URL del póster (opcional)" />
+                </div>
+              </div>
+            ))}
+          </div>
+          <DialogFooter className="gap-2 mt-3 flex-wrap">
+            <Button variant="outline" size="sm" onClick={() => setDetectedMovies(p => p.map(m => ({ ...m, selected: true })))}>Seleccionar todos</Button>
+            <Button variant="outline" size="sm"
+              disabled={detectedMovies.filter(m => m.selected && !m.poster && !m.searching).length === 0}
+              onClick={async () => {
+                const pending = detectedMovies.filter(m => m.selected && !m.poster && m.title);
+                for (const m of pending) await fetchPoster(m._id, m.title);
+              }}>
+              {detectedMovies.some(m => m.searching) ? <Loader2 className="w-3 h-3 animate-spin mr-1" /> : null}
+              Buscar todos los pósters
+            </Button>
+            <div className="flex-1" />
+            <Button variant="outline" onClick={() => setShowFolderPreview(false)}>Cancelar</Button>
+            <Button onClick={handleBulkCreate} disabled={importing || !detectedMovies.some(m => m.selected)}>
+              {importing ? <><Loader2 className="w-4 h-4 animate-spin mr-2" />Importando...</> : `Importar ${detectedMovies.filter(m => m.selected).length} película(s)`}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+        <SortableContext items={sortMode ? sortedIds : moviesList.map(m => m.id)} strategy={verticalListSortingStrategy}>
+          <div className="overflow-x-auto rounded-lg border border-border">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  {sortMode && <TableHead className="w-8"></TableHead>}
+                  <TableHead>Título</TableHead>
+                  <TableHead>Categoría</TableHead>
+                  <TableHead>Dominio</TableHead>
+                  <TableHead className="text-right">Acciones</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {displayMovies.map(mv => (
+                  <SortableMovieRow
+                    key={mv.id}
+                    mv={mv}
+                    onEdit={() => setEditMv({ id: mv.id, title: mv.title, filePath: mv.filePath, category: mv.category || '', description: mv.description || '', poster: mv.poster || '' })}
+                    onDelete={() => handleDelete(mv.id)}
+                  />
+                ))}
+                {moviesList.length === 0 && (
+                  <TableRow><TableCell colSpan={5} className="text-center text-muted-foreground py-8">Sin películas aún</TableCell></TableRow>
+                )}
+              </TableBody>
+            </Table>
+          </div>
+        </SortableContext>
+      </DndContext>
+
+      <Dialog open={!!editMv} onOpenChange={(o) => !o && setEditMv(null)}>
+        <DialogContent className="bg-card border-border max-w-lg">
+          <DialogHeader><DialogTitle>Editar Película</DialogTitle></DialogHeader>
+          {editMv && (
+            <div className="space-y-3">
+              <Input placeholder="Título *" value={editMv.title} onChange={e => setEditMv(p => p ? { ...p, title: e.target.value } : p)} />
+              <Input placeholder="URL del archivo *" value={editMv.filePath} onChange={e => setEditMv(p => p ? { ...p, filePath: e.target.value } : p)} />
+              <Input placeholder="URL del poster" value={editMv.poster} onChange={e => setEditMv(p => p ? { ...p, poster: e.target.value } : p)} />
+              <Input placeholder="Categoría" value={editMv.category} onChange={e => setEditMv(p => p ? { ...p, category: e.target.value } : p)} />
+              <Input placeholder="Descripción" value={editMv.description} onChange={e => setEditMv(p => p ? { ...p, description: e.target.value } : p)} />
+            </div>
+          )}
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setEditMv(null)}>Cancelar</Button>
+            <Button onClick={handleUpdate} disabled={updateMutation.isPending}>{updateMutation.isPending ? 'Guardando...' : 'Guardar'}</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
+
+type SubadminPkgAssignment = { packageId: number; customPrice: string };
+
+async function fetchSubadminPackages(subadminId: number): Promise<SubadminPkgAssignment[]> {
+  const token = getToken('admin');
+  const resp = await fetch(`${BASE_URL}/api/subadmins/${subadminId}/packages`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!resp.ok) return [];
+  const data = await resp.json();
+  return data.map((r: any) => ({
+    packageId: r.packageId,
+    customPrice: r.customPrice !== null ? String(r.customPrice) : '',
+  }));
+}
+
+async function saveSubadminPackages(subadminId: number, assignments: SubadminPkgAssignment[]): Promise<void> {
+  const token = getToken('admin');
+  await fetch(`${BASE_URL}/api/subadmins/${subadminId}/assign-packages`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      packages: assignments.map(a => ({
+        packageId: a.packageId,
+        customPrice: a.customPrice !== '' ? parseFloat(a.customPrice) : null,
+      })),
+    }),
+  });
+}
+
+function SubadminsManager() {
+  const qc = useQueryClient();
+  const { toast } = useToast();
+  const { data: subadmins, isLoading } = useListSubadmins({ query: { queryKey: getListSubadminsQueryKey() } });
+  const { data: allPackages } = useListPackages({ query: { queryKey: getListPackagesQueryKey() } });
+  const createMutation = useCreateSubadmin();
+  const updateMutation = useUpdateSubadmin();
+  const deleteMutation = useDeleteSubadmin();
+  const addBalanceMutation = useAddSubadminBalance();
+
+  const [showForm, setShowForm] = useState(false);
+  const [newSa, setNewSa] = useState({ username: '', password: '' });
+  const [newSaPackages, setNewSaPackages] = useState<SubadminPkgAssignment[]>([]);
+  const [balanceAmounts, setBalanceAmounts] = useState<Record<number, string>>({});
+
+  type EditState = { id: number; username: string; password: string; packages: SubadminPkgAssignment[] };
+  const [editSa, setEditSa] = useState<EditState | null>(null);
+  const [editLoading, setEditLoading] = useState(false);
+
+  const openEdit = async (sa: { id: number; username: string }) => {
+    setEditLoading(true);
+    const pkgs = await fetchSubadminPackages(sa.id);
+    setEditSa({ id: sa.id, username: sa.username, password: '', packages: pkgs });
+    setEditLoading(false);
+  };
+
+  const toggleNewSaPkg = (pkgId: number) => {
+    setNewSaPackages(prev => {
+      if (prev.find(p => p.packageId === pkgId)) return prev.filter(p => p.packageId !== pkgId);
+      return [...prev, { packageId: pkgId, customPrice: '' }];
+    });
+  };
+
+  const toggleEditSaPkg = (pkgId: number) => {
+    if (!editSa) return;
+    setEditSa(prev => {
+      if (!prev) return prev;
+      if (prev.packages.find(p => p.packageId === pkgId))
+        return { ...prev, packages: prev.packages.filter(p => p.packageId !== pkgId) };
+      return { ...prev, packages: [...prev.packages, { packageId: pkgId, customPrice: '' }] };
+    });
+  };
+
+  const handleCreate = async () => {
+    if (!newSa.username || !newSa.password) { toast({ variant: 'destructive', title: 'Completa usuario y contraseña' }); return; }
+    createMutation.mutate({ data: newSa }, {
+      onSuccess: async (created) => {
+        if (newSaPackages.length > 0) {
+          await saveSubadminPackages(created.id, newSaPackages);
+        }
+        qc.invalidateQueries({ queryKey: getListSubadminsQueryKey() });
+        toast({ title: 'Subadmin creado' });
+        setNewSa({ username: '', password: '' }); setNewSaPackages([]); setShowForm(false);
+      },
+      onError: () => toast({ variant: 'destructive', title: 'Error al crear subadmin' })
+    });
+  };
+
+  const handleUpdate = async () => {
+    if (!editSa || !editSa.username) { toast({ variant: 'destructive', title: 'El usuario es requerido' }); return; }
+    const data: { username?: string; password?: string } = { username: editSa.username };
+    if (editSa.password) data.password = editSa.password;
+    updateMutation.mutate({ id: editSa.id, data }, {
+      onSuccess: async () => {
+        await saveSubadminPackages(editSa.id, editSa.packages);
+        qc.invalidateQueries({ queryKey: getListSubadminsQueryKey() });
+        toast({ title: 'Subadmin actualizado' });
+        setEditSa(null);
+      },
+      onError: () => toast({ variant: 'destructive', title: 'Error al actualizar subadmin' })
+    });
+  };
+
+  const handleDelete = (id: number) => {
+    if (!confirm('¿Eliminar este subadmin?')) return;
+    deleteMutation.mutate({ id }, {
+      onSuccess: () => { qc.invalidateQueries({ queryKey: getListSubadminsQueryKey() }); toast({ title: 'Subadmin eliminado' }); }
+    });
+  };
+
+  const handleAddBalance = (id: number) => {
+    const amount = parseFloat(balanceAmounts[id] || '0');
+    if (!amount) return;
+    addBalanceMutation.mutate({ id, data: { amount } }, {
+      onSuccess: () => {
+        qc.invalidateQueries({ queryKey: getListSubadminsQueryKey() });
+        toast({ title: `Saldo agregado: $${amount}` });
+        setBalanceAmounts(p => ({ ...p, [id]: '' }));
+      },
+      onError: () => toast({ variant: 'destructive', title: 'Error al agregar saldo' })
+    });
+  };
+
+  const pkgs = allPackages || [];
+
+  if (isLoading) return <div className="text-muted-foreground">Cargando...</div>;
+
+  return (
+    <div className="space-y-4">
+      <div className="flex justify-between items-center">
+        <h3 className="text-lg font-medium">Gestión de Subadmins</h3>
+        <Button size="sm" onClick={() => setShowForm(!showForm)}><Plus className="w-4 h-4 mr-2" />Nuevo Subadmin</Button>
+      </div>
+
+      {showForm && (
+        <Card className="bg-background border-border p-4 space-y-4">
+          <p className="text-sm font-medium text-muted-foreground">Datos del subadmin</p>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <Input placeholder="Usuario *" value={newSa.username} onChange={e => setNewSa(p => ({ ...p, username: e.target.value }))} />
+            <Input type="password" placeholder="Contraseña *" value={newSa.password} onChange={e => setNewSa(p => ({ ...p, password: e.target.value }))} />
+          </div>
+
+          {pkgs.length > 0 && (
+            <div className="space-y-2">
+              <p className="text-sm font-medium text-muted-foreground">Asignar paquetes</p>
+              <div className="space-y-2 border border-border rounded-lg p-3">
+                {pkgs.map(pkg => {
+                  const assigned = newSaPackages.find(p => p.packageId === pkg.id);
+                  return (
+                    <div key={pkg.id} className="flex items-center gap-3 flex-wrap">
+                      <input
+                        type="checkbox"
+                        id={`new-pkg-${pkg.id}`}
+                        checked={!!assigned}
+                        onChange={() => toggleNewSaPkg(pkg.id)}
+                        className="w-4 h-4 accent-primary"
+                      />
+                      <label htmlFor={`new-pkg-${pkg.id}`} className="text-sm cursor-pointer flex-1">
+                        {pkg.name} <span className="text-muted-foreground text-xs">({minutesToLabel(pkg.durationMinutes)} · ${pkg.price.toFixed(2)} base)</span>
+                      </label>
+                      {assigned && (
+                        <div className="flex items-center gap-1">
+                          <span className="text-xs text-muted-foreground">Precio personalizado $</span>
+                          <Input
+                            type="number"
+                            min="0"
+                            step="0.01"
+                            placeholder={String(pkg.price.toFixed(2))}
+                            value={assigned.customPrice}
+                            onChange={e => setNewSaPackages(prev => prev.map(p => p.packageId === pkg.id ? { ...p, customPrice: e.target.value } : p))}
+                            className="w-24 h-7 text-sm"
+                          />
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          <div className="flex gap-2">
+            <Button onClick={handleCreate} disabled={createMutation.isPending}>{createMutation.isPending ? 'Creando...' : 'Crear Subadmin'}</Button>
+            <Button variant="outline" onClick={() => { setShowForm(false); setNewSaPackages([]); }}>Cancelar</Button>
+          </div>
+        </Card>
+      )}
+
+      <div className="overflow-x-auto rounded-lg border border-border">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Usuario</TableHead>
+              <TableHead>Saldo</TableHead>
+              <TableHead>Códigos</TableHead>
+              <TableHead>Agregar Saldo</TableHead>
+              <TableHead className="text-right">Acciones</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {(subadmins || []).map(sa => (
+              <TableRow key={sa.id}>
+                <TableCell className="font-medium">{sa.username}</TableCell>
+                <TableCell className="font-mono text-green-400">${sa.balance.toFixed(2)}</TableCell>
+                <TableCell>{sa.totalCodesGenerated}</TableCell>
+                <TableCell>
+                  <div className="flex gap-2">
+                    <Input type="number" placeholder="0.00" className="w-20 h-8 text-sm" value={balanceAmounts[sa.id] || ''} onChange={e => setBalanceAmounts(p => ({ ...p, [sa.id]: e.target.value }))} />
+                    <Button size="sm" className="h-8" onClick={() => handleAddBalance(sa.id)}>+</Button>
+                  </div>
+                </TableCell>
+                <TableCell className="text-right">
+                  <div className="flex items-center justify-end gap-1">
+                    <Button variant="ghost" size="icon" className="text-yellow-400 hover:text-yellow-300 w-8 h-8"
+                      onClick={() => openEdit(sa)}
+                      disabled={editLoading}>
+                      <Pencil className="w-4 h-4" />
+                    </Button>
+                    <Button variant="ghost" size="icon" className="text-destructive hover:text-destructive w-8 h-8" onClick={() => handleDelete(sa.id)}>
+                      <Trash2 className="w-4 h-4" />
+                    </Button>
+                  </div>
+                </TableCell>
+              </TableRow>
+            ))}
+            {(subadmins || []).length === 0 && (
+              <TableRow><TableCell colSpan={5} className="text-center text-muted-foreground py-8">Sin subadmins aún</TableCell></TableRow>
+            )}
+          </TableBody>
+        </Table>
+      </div>
+
+      <Dialog open={!!editSa} onOpenChange={(o) => !o && setEditSa(null)}>
+        <DialogContent className="bg-card border-border max-w-lg max-h-[90vh] overflow-y-auto">
+          <DialogHeader><DialogTitle>Editar Subadmin</DialogTitle></DialogHeader>
+          {editSa && (
+            <div className="space-y-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <Input placeholder="Usuario *" value={editSa.username} onChange={e => setEditSa(p => p ? { ...p, username: e.target.value } : p)} />
+                <Input type="password" placeholder="Nueva contraseña (vacío = no cambiar)" value={editSa.password} onChange={e => setEditSa(p => p ? { ...p, password: e.target.value } : p)} />
+              </div>
+
+              {pkgs.length > 0 && (
+                <div className="space-y-2">
+                  <p className="text-sm font-medium text-muted-foreground">Paquetes asignados</p>
+                  <div className="space-y-2 border border-border rounded-lg p-3">
+                    {pkgs.map(pkg => {
+                      const assigned = editSa.packages.find(p => p.packageId === pkg.id);
+                      return (
+                        <div key={pkg.id} className="flex items-center gap-3 flex-wrap">
+                          <input
+                            type="checkbox"
+                            id={`edit-pkg-${pkg.id}`}
+                            checked={!!assigned}
+                            onChange={() => toggleEditSaPkg(pkg.id)}
+                            className="w-4 h-4 accent-primary"
+                          />
+                          <label htmlFor={`edit-pkg-${pkg.id}`} className="text-sm cursor-pointer flex-1">
+                            {pkg.name} <span className="text-muted-foreground text-xs">({minutesToLabel(pkg.durationMinutes)} · ${pkg.price.toFixed(2)} base)</span>
+                          </label>
+                          {assigned && (
+                            <div className="flex items-center gap-1">
+                              <span className="text-xs text-muted-foreground">Precio $</span>
+                              <Input
+                                type="number"
+                                min="0"
+                                step="0.01"
+                                placeholder={String(pkg.price.toFixed(2))}
+                                value={assigned.customPrice}
+                                onChange={e => setEditSa(prev => prev ? {
+                                  ...prev,
+                                  packages: prev.packages.map(p => p.packageId === pkg.id ? { ...p, customPrice: e.target.value } : p)
+                                } : prev)}
+                                className="w-24 h-7 text-sm"
+                              />
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setEditSa(null)}>Cancelar</Button>
+            <Button onClick={handleUpdate} disabled={updateMutation.isPending}>{updateMutation.isPending ? 'Guardando...' : 'Guardar'}</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
+
+function PackagesManager() {
+  const qc = useQueryClient();
+  const { toast } = useToast();
+  const { data: packages, isLoading } = useListPackages({ query: { queryKey: getListPackagesQueryKey() } });
+  const createMutation = useCreatePackage();
+  const updateMutation = useUpdatePackage();
+  const deleteMutation = useDeletePackage();
+
+  const [showForm, setShowForm] = useState(false);
+  const [newPkg, setNewPkg] = useState({ name: '', durationAmount: '30', durationUnit: 'days' as TimeUnit, price: '0', description: '' });
+  const [editPkg, setEditPkg] = useState<{ id: number; name: string; durationAmount: string; durationUnit: TimeUnit; price: string; description: string } | null>(null);
+
+  const handleCreate = () => {
+    if (!newPkg.name) { toast({ variant: 'destructive', title: 'El nombre es requerido' }); return; }
+    const durationMinutes = unitsToMinutes(parseInt(newPkg.durationAmount) || 30, newPkg.durationUnit);
+    createMutation.mutate({ data: { name: newPkg.name, durationMinutes, price: parseFloat(newPkg.price) || 0, description: newPkg.description || undefined } }, {
+      onSuccess: () => {
+        qc.invalidateQueries({ queryKey: getListPackagesQueryKey() });
+        toast({ title: 'Paquete creado' });
+        setNewPkg({ name: '', durationAmount: '30', durationUnit: 'days', price: '0', description: '' }); setShowForm(false);
+      },
+      onError: () => toast({ variant: 'destructive', title: 'Error al crear paquete' })
+    });
+  };
+
+  const handleUpdate = () => {
+    if (!editPkg || !editPkg.name) { toast({ variant: 'destructive', title: 'El nombre es requerido' }); return; }
+    const durationMinutes = unitsToMinutes(parseInt(editPkg.durationAmount) || 30, editPkg.durationUnit);
+    updateMutation.mutate({ id: editPkg.id, data: { name: editPkg.name, durationMinutes, price: parseFloat(editPkg.price) || 0, description: editPkg.description || undefined } }, {
+      onSuccess: () => {
+        qc.invalidateQueries({ queryKey: getListPackagesQueryKey() });
+        toast({ title: 'Paquete actualizado' });
+        setEditPkg(null);
+      },
+      onError: () => toast({ variant: 'destructive', title: 'Error al actualizar paquete' })
+    });
+  };
+
+  const handleDelete = (id: number) => {
+    if (!confirm('¿Eliminar este paquete?')) return;
+    deleteMutation.mutate({ id }, {
+      onSuccess: () => { qc.invalidateQueries({ queryKey: getListPackagesQueryKey() }); toast({ title: 'Paquete eliminado' }); }
+    });
+  };
+
+  if (isLoading) return <div className="text-muted-foreground">Cargando...</div>;
+
+  return (
+    <div className="space-y-4">
+      <div className="flex justify-between items-center">
+        <h3 className="text-lg font-medium">Gestión de Paquetes</h3>
+        <Button size="sm" onClick={() => setShowForm(!showForm)}><Plus className="w-4 h-4 mr-2" />Nuevo Paquete</Button>
+      </div>
+
+      {showForm && (
+        <Card className="bg-background border-border p-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <Input placeholder="Nombre *" value={newPkg.name} onChange={e => setNewPkg(p => ({ ...p, name: e.target.value }))} />
+            <div className="flex gap-2">
+              <Input type="number" min="1" placeholder="Duración" value={newPkg.durationAmount} onChange={e => setNewPkg(p => ({ ...p, durationAmount: e.target.value }))} />
+              <SelectUnit value={newPkg.durationUnit} onChange={v => setNewPkg(p => ({ ...p, durationUnit: v }))} />
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-sm text-muted-foreground">$</span>
+              <Input type="number" min="0" step="0.01" placeholder="Precio (0 = gratis)" value={newPkg.price} onChange={e => setNewPkg(p => ({ ...p, price: e.target.value }))} />
+            </div>
+            <Input placeholder="Descripción" value={newPkg.description} onChange={e => setNewPkg(p => ({ ...p, description: e.target.value }))} />
+          </div>
+          <p className="text-xs text-muted-foreground mt-2">
+            Duración: {minutesToLabel(unitsToMinutes(parseInt(newPkg.durationAmount) || 30, newPkg.durationUnit))}
+          </p>
+          <div className="flex gap-2 mt-3">
+            <Button onClick={handleCreate} disabled={createMutation.isPending}>{createMutation.isPending ? 'Creando...' : 'Crear'}</Button>
+            <Button variant="outline" onClick={() => setShowForm(false)}>Cancelar</Button>
+          </div>
+        </Card>
+      )}
+
+      <div className="overflow-x-auto rounded-lg border border-border">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Nombre</TableHead>
+              <TableHead>Duración</TableHead>
+              <TableHead>Precio</TableHead>
+              <TableHead>Descripción</TableHead>
+              <TableHead className="text-right">Acciones</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {(packages || []).map(pkg => (
+              <TableRow key={pkg.id}>
+                <TableCell className="font-medium">{pkg.name}</TableCell>
+                <TableCell>{minutesToLabel(pkg.durationMinutes)}</TableCell>
+                <TableCell className="font-mono">{pkg.price === 0 ? <span className="text-green-400">Gratis</span> : `$${pkg.price.toFixed(2)}`}</TableCell>
+                <TableCell className="text-sm text-muted-foreground">{pkg.description || '-'}</TableCell>
+                <TableCell className="text-right">
+                  <div className="flex items-center justify-end gap-1">
+                    <Button variant="ghost" size="icon" className="text-yellow-400 hover:text-yellow-300 w-8 h-8"
+                      onClick={() => {
+                        const { amount, unit } = minutesToEditState(pkg.durationMinutes);
+                        setEditPkg({ id: pkg.id, name: pkg.name, durationAmount: amount, durationUnit: unit, price: String(pkg.price), description: pkg.description || '' });
+                      }}>
+                      <Pencil className="w-4 h-4" />
+                    </Button>
+                    <Button variant="ghost" size="icon" className="text-destructive hover:text-destructive w-8 h-8" onClick={() => handleDelete(pkg.id)}>
+                      <Trash2 className="w-4 h-4" />
+                    </Button>
+                  </div>
+                </TableCell>
+              </TableRow>
+            ))}
+            {(packages || []).length === 0 && (
+              <TableRow><TableCell colSpan={5} className="text-center text-muted-foreground py-8">Sin paquetes aún</TableCell></TableRow>
+            )}
+          </TableBody>
+        </Table>
+      </div>
+
+      <Dialog open={!!editPkg} onOpenChange={(o) => !o && setEditPkg(null)}>
+        <DialogContent className="bg-card border-border max-w-md">
+          <DialogHeader><DialogTitle>Editar Paquete</DialogTitle></DialogHeader>
+          {editPkg && (
+            <div className="space-y-3">
+              <Input placeholder="Nombre *" value={editPkg.name} onChange={e => setEditPkg(p => p ? { ...p, name: e.target.value } : p)} />
+              <div className="flex gap-2">
+                <Input type="number" min="1" placeholder="Duración" value={editPkg.durationAmount} onChange={e => setEditPkg(p => p ? { ...p, durationAmount: e.target.value } : p)} />
+                <SelectUnit value={editPkg.durationUnit} onChange={v => setEditPkg(p => p ? { ...p, durationUnit: v } : p)} />
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Duración: {minutesToLabel(unitsToMinutes(parseInt(editPkg.durationAmount) || 1, editPkg.durationUnit))}
+              </p>
+              <div className="flex items-center gap-2">
+                <span className="text-sm text-muted-foreground">$</span>
+                <Input type="number" min="0" step="0.01" placeholder="Precio" value={editPkg.price} onChange={e => setEditPkg(p => p ? { ...p, price: e.target.value } : p)} />
+              </div>
+              <Input placeholder="Descripción" value={editPkg.description} onChange={e => setEditPkg(p => p ? { ...p, description: e.target.value } : p)} />
+            </div>
+          )}
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setEditPkg(null)}>Cancelar</Button>
+            <Button onClick={handleUpdate} disabled={updateMutation.isPending}>{updateMutation.isPending ? 'Guardando...' : 'Guardar'}</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
+
+function SettingsManager() {
+  const { toast } = useToast();
+  const changePasswordMutation = useAdminChangePassword();
+
+  const [currentPassword, setCurrentPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [showCurrent, setShowCurrent] = useState(false);
+  const [showNew, setShowNew] = useState(false);
+  const [showConfirm, setShowConfirm] = useState(false);
+
+  const handleChangePassword = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (newPassword !== confirmPassword) {
+      toast({ variant: 'destructive', title: 'Error', description: 'Las contraseñas nuevas no coinciden' });
+      return;
+    }
+    if (newPassword.length < 4) {
+      toast({ variant: 'destructive', title: 'Error', description: 'La nueva contraseña debe tener al menos 4 caracteres' });
+      return;
+    }
+    changePasswordMutation.mutate(
+      { data: { currentPassword, newPassword } },
+      {
+        onSuccess: () => {
+          toast({ title: 'Contraseña actualizada', description: 'Tu contraseña ha sido cambiada exitosamente.' });
+          setCurrentPassword('');
+          setNewPassword('');
+          setConfirmPassword('');
+        },
+        onError: (err: any) => {
+          const msg = err?.data?.error ?? 'Error al cambiar la contraseña';
+          toast({ variant: 'destructive', title: 'Error', description: msg });
+        },
+      }
+    );
+  };
+
+  return (
+    <div className="space-y-6 max-w-lg">
+      <h3 className="text-lg font-medium flex items-center gap-2">
+        <Settings className="w-5 h-5" /> Configuración
+      </h3>
+      <Card className="bg-background border-border">
+        <CardHeader>
+          <CardTitle className="text-base flex items-center gap-2">
+            <Key className="w-4 h-4" /> Cambiar Contraseña de Admin
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <form onSubmit={handleChangePassword} className="space-y-4">
+            <div className="relative">
+              <Input
+                type={showCurrent ? 'text' : 'password'}
+                placeholder="Contraseña actual"
+                value={currentPassword}
+                onChange={e => setCurrentPassword(e.target.value)}
+                className="pr-10"
+                required
+              />
+              <button type="button" onClick={() => setShowCurrent(v => !v)}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
+                {showCurrent ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+              </button>
+            </div>
+            <div className="relative">
+              <Input
+                type={showNew ? 'text' : 'password'}
+                placeholder="Nueva contraseña"
+                value={newPassword}
+                onChange={e => setNewPassword(e.target.value)}
+                className="pr-10"
+                required
+              />
+              <button type="button" onClick={() => setShowNew(v => !v)}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
+                {showNew ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+              </button>
+            </div>
+            <div className="relative">
+              <Input
+                type={showConfirm ? 'text' : 'password'}
+                placeholder="Confirmar nueva contraseña"
+                value={confirmPassword}
+                onChange={e => setConfirmPassword(e.target.value)}
+                className="pr-10"
+                required
+              />
+              <button type="button" onClick={() => setShowConfirm(v => !v)}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
+                {showConfirm ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+              </button>
+            </div>
+            <Button type="submit" disabled={changePasswordMutation.isPending} className="w-full">
+              {changePasswordMutation.isPending
+                ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Cambiando...</>
+                : 'Cambiar Contraseña'}
+            </Button>
+          </form>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+const AVATAR_ALLOWED_TYPES = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp'];
+const AVATAR_MAX_SIZE_MB = 5;
+
+function AvatarsManager() {
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const { data: avatars = [], isLoading } = useListAvatars({ query: { queryKey: getListAvatarsQueryKey() } });
+  const createAvatarMutation = useCreateAvatar();
+  const deleteAvatarMutation = useDeleteAvatar();
+
+  const [uploading, setUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState<{ done: number; total: number } | null>(null);
+
+  const cropToSquare = useCallback((file: File): Promise<File> => {
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      const url = URL.createObjectURL(file);
+      img.onload = () => {
+        URL.revokeObjectURL(url);
+        const size = Math.min(img.width, img.height);
+        const canvas = document.createElement('canvas');
+        canvas.width = 256;
+        canvas.height = 256;
+        const ctx = canvas.getContext('2d')!;
+        const sx = (img.width - size) / 2;
+        const sy = (img.height - size) / 2;
+        ctx.drawImage(img, sx, sy, size, size, 0, 0, 256, 256);
+        canvas.toBlob((blob) => {
+          if (!blob) { reject(new Error('Error al procesar imagen')); return; }
+          resolve(new File([blob], file.name.replace(/\.[^.]+$/, '') + '.jpg', { type: 'image/jpeg' }));
+        }, 'image/jpeg', 0.92);
+      };
+      img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('Error al cargar imagen')); };
+      img.src = url;
+    });
+  }, []);
+
+  const uploadSingleFile = useCallback(async (file: File): Promise<void> => {
+    if (!AVATAR_ALLOWED_TYPES.includes(file.type)) {
+      throw new Error(`"${file.name}": tipo no permitido. Solo JPG, PNG o WebP.`);
+    }
+    if (file.size > AVATAR_MAX_SIZE_MB * 1024 * 1024) {
+      throw new Error(`"${file.name}": supera el límite de ${AVATAR_MAX_SIZE_MB} MB.`);
+    }
+    const processedFile = await cropToSquare(file);
+    const baseName = file.name.replace(/\.[^.]+$/, '');
+    const res = await fetch(`${BASE_URL}/api/storage/uploads/request-url`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: processedFile.name, size: processedFile.size, contentType: 'image/jpeg' }),
+    });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      throw new Error(body?.error ?? `Error al solicitar URL para ${file.name}`);
+    }
+    const { uploadURL, objectPath } = await res.json();
+    const putRes = await fetch(uploadURL, { method: 'PUT', body: processedFile, headers: { 'Content-Type': 'image/jpeg' } });
+    if (!putRes.ok) throw new Error(`Error al subir ${file.name}`);
+    const publicUrl = `${BASE_URL}/api/storage${objectPath}`;
+    await createAvatarMutation.mutateAsync({ data: { imageUrl: publicUrl, name: baseName || null } });
+  }, [cropToSquare, createAvatarMutation]);
+
+  const handleFileChange = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files ?? []);
+    if (files.length === 0) return;
+    setUploading(true);
+    setUploadProgress({ done: 0, total: files.length });
+    let done = 0;
+    const errorMessages: string[] = [];
+    for (const file of files) {
+      try {
+        await uploadSingleFile(file);
+        done++;
+        setUploadProgress({ done: done + errorMessages.length, total: files.length });
+      } catch (err) {
+        errorMessages.push(err instanceof Error ? err.message : `Error con ${file.name}`);
+        setUploadProgress({ done: done + errorMessages.length, total: files.length });
+      }
+    }
+    await queryClient.invalidateQueries({ queryKey: getListAvatarsQueryKey() });
+    if (errorMessages.length > 0 && done === 0) {
+      toast({ variant: 'destructive', title: 'No se pudo subir ningún archivo', description: errorMessages[0] });
+    } else if (errorMessages.length > 0) {
+      toast({ variant: 'destructive', title: `${done} subidos, ${errorMessages.length} con error`, description: errorMessages[0] });
+    } else {
+      toast({ title: `${done} avatar${done > 1 ? 'es' : ''} subido${done > 1 ? 's' : ''}`, description: 'Todos los avatares fueron agregados.' });
+    }
+    setUploading(false);
+    setUploadProgress(null);
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  }, [uploadSingleFile, queryClient, toast]);
+
+  const handleDelete = useCallback(async (id: number) => {
+    if (!confirm('¿Eliminar este avatar?')) return;
+    await deleteAvatarMutation.mutateAsync({ id });
+    await queryClient.invalidateQueries({ queryKey: getListAvatarsQueryKey() });
+    toast({ title: 'Avatar eliminado' });
+  }, [deleteAvatarMutation, queryClient, toast]);
+
+  return (
+    <div className="space-y-6">
+      <div className="flex items-center justify-between">
+        <h2 className="text-lg font-semibold flex items-center gap-2"><UserCircle2 className="w-5 h-5" /> Avatares</h2>
+      </div>
+
+      <div className="bg-secondary/30 rounded-xl p-4 space-y-3">
+        <p className="text-sm font-medium">Subir avatares</p>
+        <div className="flex gap-2 flex-wrap items-center">
+          <Button onClick={() => fileInputRef.current?.click()} disabled={uploading} className="flex items-center gap-2">
+            {uploading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
+            {uploading
+              ? uploadProgress
+                ? `Subiendo ${uploadProgress.done}/${uploadProgress.total}...`
+                : 'Subiendo...'
+              : 'Seleccionar imágenes'}
+          </Button>
+          <input ref={fileInputRef} type="file" accept="image/*" multiple className="hidden" onChange={handleFileChange} />
+          {uploading && uploadProgress && (
+            <div className="flex-1 max-w-xs bg-secondary rounded-full h-2 overflow-hidden">
+              <div
+                className="h-full bg-primary transition-all duration-300"
+                style={{ width: `${(uploadProgress.done / uploadProgress.total) * 100}%` }}
+              />
+            </div>
+          )}
+        </div>
+        <p className="text-xs text-muted-foreground">Puedes seleccionar varias imágenes a la vez. El nombre del archivo se usará como nombre del avatar.</p>
+      </div>
+
+      {isLoading ? (
+        <div className="flex items-center justify-center py-12 text-muted-foreground">
+          <Loader2 className="w-6 h-6 animate-spin mr-2" /> Cargando avatares...
+        </div>
+      ) : avatars.length === 0 ? (
+        <div className="text-center py-12 text-muted-foreground">
+          <UserCircle2 className="w-12 h-12 mx-auto mb-3 opacity-30" />
+          <p>Sin avatares aún. Sube el primero.</p>
+        </div>
+      ) : (
+        <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 gap-4">
+          {avatars.map(av => (
+            <div key={av.id} className="relative group flex flex-col items-center gap-1">
+              <div className="w-16 h-16 rounded-full overflow-hidden border-2 border-border group-hover:border-primary transition-colors">
+                <img src={av.imageUrl} alt={av.name ?? 'Avatar'} className="w-full h-full object-cover" />
+              </div>
+              {av.name && <p className="text-[10px] text-muted-foreground text-center truncate w-16">{av.name}</p>}
+              <button
+                onClick={() => handleDelete(av.id)}
+                className="absolute -top-1 -right-1 w-5 h-5 bg-destructive text-white rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+              >
+                <Trash2 className="w-3 h-3" />
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+const BASE_API = (import.meta.env.VITE_API_URL || import.meta.env.BASE_URL || '').replace(/\/+$/, '');
+
+function getAdminToken(): string {
+  return (localStorage.getItem('supertv_token_admin') || localStorage.getItem('supertv_token_subadmin') || '');
+}
+
+interface SeriesRow {
+  id: number; title: string; description?: string | null; poster?: string | null;
+  banner?: string | null; category?: string | null; genre?: string | null;
+  year?: number | null; featured: boolean; hidden: boolean; order: number; createdAt: string;
+}
+interface SeasonRow { id: number; seriesId: number; seasonNumber: number; title?: string | null; poster?: string | null; episodes: EpisodeRow[]; }
+interface EpisodeRow { id: number; seriesId: number; seasonId: number; episodeNumber: number; title: string; description?: string | null; filePath: string; thumbnail?: string | null; duration?: number | null; order: number; }
+
+function SeriesManager() {
+  const { toast } = useToast();
+  const [seriesList, setSeriesList] = useState<SeriesRow[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [expandedId, setExpandedId] = useState<number | null>(null);
+  const [expandedSeries, setExpandedSeries] = useState<{ seasons: SeasonRow[] } | null>(null);
+  const [expandedLoading, setExpandedLoading] = useState(false);
+  const [showCreate, setShowCreate] = useState(false);
+  const [editSeries, setEditSeries] = useState<SeriesRow | null>(null);
+  const [scanUrl, setScanUrl] = useState('');
+  const [scanning, setScanning] = useState(false);
+  const [showScanner, setShowScanner] = useState(false);
+  const [showEpForm, setShowEpForm] = useState<{ seriesId: number; seasonId: number } | null>(null);
+  const [showSeasonForm, setShowSeasonForm] = useState<number | null>(null);
+  const [searchQ, setSearchQ] = useState('');
+  const [newSeasonForm, setNewSeasonForm] = useState({ seasonNumber: '1', title: '' });
+  const [newEpForm, setNewEpForm] = useState({ episodeNumber: '', title: '', filePath: '', description: '', thumbnail: '' });
+  const [seriesScanUrl, setSeriesScanUrl] = useState('');
+  const [scanningSeasons, setScanningSeasons] = useState(false);
+  const [posterSearching, setPosterSearching] = useState(false);
+
+  const form0: Partial<SeriesRow> = { title: '', description: '', poster: '', banner: '', category: '', genre: '', year: undefined, featured: false, hidden: false };
+  const [createForm, setCreateForm] = useState<Partial<SeriesRow>>(form0);
+
+  const refresh = useCallback(async () => {
+    setLoading(true);
+    try {
+      const r = await fetch(`${BASE_API}/api/series/all`, { headers: { Authorization: `Bearer ${getAdminToken()}` } });
+      if (r.ok) setSeriesList(await r.json());
+    } catch {}
+    setLoading(false);
+  }, []);
+
+  useEffect(() => { refresh(); }, [refresh]);
+
+  const loadExpanded = useCallback(async (id: number) => {
+    if (expandedId === id) { setExpandedId(null); setExpandedSeries(null); return; }
+    setExpandedId(id); setExpandedLoading(true); setExpandedSeries(null);
+    try {
+      const r = await fetch(`${BASE_API}/api/series/${id}`, { headers: { Authorization: `Bearer ${getAdminToken()}` } });
+      if (r.ok) setExpandedSeries(await r.json());
+    } catch {}
+    setExpandedLoading(false);
+  }, [expandedId]);
+
+  const handleCreate = async () => {
+    if (!createForm.title) { toast({ variant: 'destructive', title: 'El título es requerido' }); return; }
+    const r = await fetch(`${BASE_API}/api/series`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${getAdminToken()}` }, body: JSON.stringify(createForm) });
+    if (r.ok) { toast({ title: 'Serie creada' }); setShowCreate(false); setCreateForm(form0); refresh(); }
+    else toast({ variant: 'destructive', title: 'Error al crear serie' });
+  };
+
+  const handleUpdate = async () => {
+    if (!editSeries?.title) return;
+    const r = await fetch(`${BASE_API}/api/series/${editSeries.id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${getAdminToken()}` }, body: JSON.stringify(editSeries) });
+    if (r.ok) { toast({ title: 'Serie actualizada' }); setEditSeries(null); refresh(); }
+    else toast({ variant: 'destructive', title: 'Error al actualizar' });
+  };
+
+  const handleDelete = async (id: number) => {
+    if (!confirm('¿Eliminar esta serie y todos sus episodios?')) return;
+    await fetch(`${BASE_API}/api/series/${id}`, { method: 'DELETE', headers: { Authorization: `Bearer ${getAdminToken()}` } });
+    toast({ title: 'Serie eliminada' }); refresh();
+    if (expandedId === id) { setExpandedId(null); setExpandedSeries(null); }
+  };
+
+  const handleSearchPoster = async (title: string) => {
+    if (!title) return;
+    setPosterSearching(true);
+    try {
+      const r = await fetch(`${BASE_API}/api/series/poster-search?q=${encodeURIComponent(title)}`, { headers: { Authorization: `Bearer ${getAdminToken()}` } });
+      if (r.ok) {
+        const d = await r.json();
+        if (editSeries) setEditSeries(p => p ? ({ ...p, poster: d.poster || p.poster, banner: d.banner || p.banner, year: d.year ?? p.year, genre: d.genre || p.genre, description: d.description || p.description }) : p);
+        else setCreateForm(p => ({ ...p, poster: d.poster || p.poster, banner: d.banner || p.banner, year: d.year ?? p.year, genre: d.genre || p.genre, description: d.description || p.description }));
+        if (d.poster || d.banner) toast({ title: 'Carátulas encontradas' });
+        else toast({ title: 'Sin resultados en TMDB', variant: 'destructive' });
+      }
+    } catch {}
+    setPosterSearching(false);
+  };
+
+  const handleScanFolder = async () => {
+    if (!scanUrl.trim()) return;
+    setScanning(true);
+    try {
+      const r = await fetch(`${BASE_API}/api/series/scan-folder`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${getAdminToken()}` }, body: JSON.stringify({ url: scanUrl.trim() }) });
+      if (r.ok) {
+        const data = await r.json();
+        const items: Array<{ name: string; url?: string; poster?: string }> = data.items ?? [];
+        if (!items.length) { toast({ title: 'No se encontraron series', variant: 'destructive' }); setScanning(false); return; }
+        let imported = 0;
+        for (const item of items) {
+          const cr = await fetch(`${BASE_API}/api/series`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${getAdminToken()}` }, body: JSON.stringify({ title: item.name, poster: item.poster || undefined }) });
+          if (cr.ok) {
+            const created = await cr.json();
+            if (item.url) await fetch(`${BASE_API}/api/series/${created.id}/scan-seasons`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${getAdminToken()}` }, body: JSON.stringify({ url: item.url }) });
+            imported++;
+          }
+        }
+        toast({ title: `${imported} serie(s) importada(s)` });
+        setScanUrl(''); setShowScanner(false); refresh();
+      } else {
+        const err = await r.json().catch(() => ({}));
+        toast({ variant: 'destructive', title: 'Error al escanear', description: (err as any)?.error || 'No se pudo acceder a la URL' });
+      }
+    } catch (e: unknown) {
+      toast({ variant: 'destructive', title: 'Error', description: e instanceof Error ? e.message : 'Error desconocido' });
+    }
+    setScanning(false);
+  };
+
+  const handleScanSeasons = async (seriesId: number) => {
+    if (!seriesScanUrl.trim()) return;
+    setScanningSeasons(true);
+    try {
+      const r = await fetch(`${BASE_API}/api/series/${seriesId}/scan-seasons`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${getAdminToken()}` }, body: JSON.stringify({ url: seriesScanUrl.trim() }) });
+      if (r.ok) {
+        const d = await r.json();
+        toast({ title: `${(d as any).seasonsCreated ?? 0} temporada(s) importada(s)` });
+        setSeriesScanUrl('');
+        setExpandedId(null); setExpandedSeries(null);
+        setTimeout(() => loadExpanded(seriesId), 100);
+      } else {
+        const err = await r.json().catch(() => ({}));
+        toast({ variant: 'destructive', title: 'Error al escanear temporadas', description: (err as any)?.error });
+      }
+    } catch (e: unknown) {
+      toast({ variant: 'destructive', title: 'Error', description: e instanceof Error ? e.message : '' });
+    }
+    setScanningSeasons(false);
+  };
+
+  const handleAddSeason = async () => {
+    if (!showSeasonForm) return;
+    const id = showSeasonForm;
+    const r = await fetch(`${BASE_API}/api/seasons`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${getAdminToken()}` }, body: JSON.stringify({ seriesId: id, seasonNumber: Number(newSeasonForm.seasonNumber), title: newSeasonForm.title || undefined }) });
+    if (r.ok) { toast({ title: 'Temporada creada' }); setShowSeasonForm(null); setNewSeasonForm({ seasonNumber: '1', title: '' }); loadExpanded(id); }
+    else toast({ variant: 'destructive', title: 'Error al crear temporada' });
+  };
+
+  const handleDeleteSeason = async (seasonId: number, seriesId: number) => {
+    if (!confirm('¿Eliminar temporada y sus episodios?')) return;
+    await fetch(`${BASE_API}/api/seasons/${seasonId}`, { method: 'DELETE', headers: { Authorization: `Bearer ${getAdminToken()}` } });
+    toast({ title: 'Temporada eliminada' }); loadExpanded(seriesId);
+  };
+
+  const handleAddEpisode = async () => {
+    if (!showEpForm || !newEpForm.title || !newEpForm.filePath) { toast({ variant: 'destructive', title: 'Título y URL son requeridos' }); return; }
+    const { seriesId, seasonId } = showEpForm;
+    const r = await fetch(`${BASE_API}/api/episodes`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${getAdminToken()}` }, body: JSON.stringify({ seriesId, seasonId, title: newEpForm.title, filePath: newEpForm.filePath, description: newEpForm.description || undefined, thumbnail: newEpForm.thumbnail || undefined, episodeNumber: newEpForm.episodeNumber ? Number(newEpForm.episodeNumber) : undefined }) });
+    if (r.ok) { toast({ title: 'Episodio creado' }); setShowEpForm(null); setNewEpForm({ episodeNumber: '', title: '', filePath: '', description: '', thumbnail: '' }); loadExpanded(seriesId); }
+    else toast({ variant: 'destructive', title: 'Error al crear episodio' });
+  };
+
+  const handleDeleteEpisode = async (epId: number, seriesId: number) => {
+    if (!confirm('¿Eliminar este episodio?')) return;
+    await fetch(`${BASE_API}/api/episodes/${epId}`, { method: 'DELETE', headers: { Authorization: `Bearer ${getAdminToken()}` } });
+    toast({ title: 'Episodio eliminado' }); loadExpanded(seriesId);
+  };
+
+  const filtered = seriesList.filter(s => !searchQ || s.title.toLowerCase().includes(searchQ.toLowerCase()));
+
+  const SeriesFormFields = ({ form, setForm }: { form: Partial<SeriesRow>; setForm: (v: Partial<SeriesRow>) => void }) => (
+    <div className="space-y-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <div className="space-y-1">
+          <label className="text-xs text-muted-foreground">Título *</label>
+          <Input value={form.title || ''} onChange={e => setForm({ ...form, title: e.target.value })} placeholder="Nombre de la serie" className="bg-background" />
+        </div>
+        <div className="space-y-1">
+          <label className="text-xs text-muted-foreground">Categoría</label>
+          <Input value={form.category || ''} onChange={e => setForm({ ...form, category: e.target.value })} placeholder="Drama, Acción..." className="bg-background" />
+        </div>
+        <div className="space-y-1">
+          <label className="text-xs text-muted-foreground">Género</label>
+          <Input value={form.genre || ''} onChange={e => setForm({ ...form, genre: e.target.value })} placeholder="Drama" className="bg-background" />
+        </div>
+        <div className="space-y-1">
+          <label className="text-xs text-muted-foreground">Año</label>
+          <Input type="number" value={form.year || ''} onChange={e => setForm({ ...form, year: e.target.value ? Number(e.target.value) : undefined })} placeholder="2024" className="bg-background" />
+        </div>
+      </div>
+      <div className="space-y-1">
+        <label className="text-xs text-muted-foreground">Descripción</label>
+        <Textarea value={form.description || ''} onChange={e => setForm({ ...form, description: e.target.value })} placeholder="Sinopsis de la serie..." className="bg-background h-20" />
+      </div>
+      <div className="flex gap-2 items-end">
+        <div className="flex-1 space-y-1">
+          <label className="text-xs text-muted-foreground">URL Poster</label>
+          <Input value={form.poster || ''} onChange={e => setForm({ ...form, poster: e.target.value })} placeholder="https://..." className="bg-background" />
+        </div>
+        <Button variant="outline" size="sm" disabled={posterSearching || !form.title} onClick={() => handleSearchPoster(form.title || '')} className="flex-shrink-0">
+          {posterSearching ? <Loader2 className="w-4 h-4 animate-spin" /> : <Search className="w-4 h-4" />}
+          <span className="hidden sm:inline ml-1">TMDB</span>
+        </Button>
+      </div>
+      <div className="space-y-1">
+        <label className="text-xs text-muted-foreground">URL Banner</label>
+        <Input value={form.banner || ''} onChange={e => setForm({ ...form, banner: e.target.value })} placeholder="https://... (imagen panorámica)" className="bg-background" />
+      </div>
+      <div className="flex gap-4">
+        <label className="flex items-center gap-2 text-sm cursor-pointer">
+          <input type="checkbox" checked={!!form.featured} onChange={e => setForm({ ...form, featured: e.target.checked })} className="w-4 h-4 rounded" />
+          Destacada
+        </label>
+        <label className="flex items-center gap-2 text-sm cursor-pointer">
+          <input type="checkbox" checked={!!form.hidden} onChange={e => setForm({ ...form, hidden: e.target.checked })} className="w-4 h-4 rounded" />
+          Oculta
+        </label>
+      </div>
+    </div>
+  );
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between flex-wrap gap-2">
+        <h3 className="text-lg font-semibold flex items-center gap-2"><Tv2 className="w-5 h-5" /> Series ({seriesList.length})</h3>
+        <div className="flex gap-2 flex-wrap">
+          <Button size="sm" variant="outline" onClick={() => setShowScanner(p => !p)} className="flex items-center gap-1.5">
+            <Globe className="w-4 h-4" /> Escanear URL
+          </Button>
+          <Button size="sm" onClick={() => setShowCreate(true)} className="flex items-center gap-1.5">
+            <Plus className="w-4 h-4" /> Nueva Serie
+          </Button>
+        </div>
+      </div>
+
+      {showScanner && (
+        <div className="bg-secondary/30 rounded-xl p-4 space-y-3 border border-border">
+          <p className="text-sm font-medium flex items-center gap-2"><Globe className="w-4 h-4 text-primary" /> Importar series desde carpeta HTTP</p>
+          <p className="text-xs text-muted-foreground">URL de un directorio HTTP con subcarpetas de series. Se importarán automáticamente.</p>
+          <div className="flex gap-2">
+            <Input value={scanUrl} onChange={e => setScanUrl(e.target.value)} placeholder="https://servidor.com/series/" className="bg-background flex-1" />
+            <Button onClick={handleScanFolder} disabled={scanning || !scanUrl.trim()}>
+              {scanning ? <Loader2 className="w-4 h-4 animate-spin" /> : <Search className="w-4 h-4" />}
+              <span className="ml-1">Escanear</span>
+            </Button>
+          </div>
+        </div>
+      )}
+
+      <div className="relative max-w-sm">
+        <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+        <Input value={searchQ} onChange={e => setSearchQ(e.target.value)} placeholder="Buscar series..." className="pl-8 bg-background" />
+      </div>
+
+      {showCreate && (
+        <div className="border border-border rounded-xl p-4 space-y-4 bg-secondary/20">
+          <h4 className="font-semibold">Nueva Serie</h4>
+          <SeriesFormFields form={createForm} setForm={(v) => setCreateForm(p => ({ ...p, ...v }))} />
+          <div className="flex gap-2 justify-end">
+            <Button variant="outline" onClick={() => { setShowCreate(false); setCreateForm(form0); }}>Cancelar</Button>
+            <Button onClick={handleCreate}>Crear Serie</Button>
+          </div>
+        </div>
+      )}
+
+      {loading ? (
+        <div className="py-12 text-center text-muted-foreground flex items-center justify-center gap-2"><Loader2 className="w-5 h-5 animate-spin" /> Cargando series...</div>
+      ) : filtered.length === 0 ? (
+        <div className="py-12 text-center text-muted-foreground"><Tv2 className="w-12 h-12 mx-auto mb-3 opacity-20" /><p>{searchQ ? 'Sin resultados' : 'No hay series aún. Crea la primera.'}</p></div>
+      ) : (
+        <div className="space-y-2">
+          {filtered.map(series => (
+            <div key={series.id} className="border border-border rounded-xl overflow-hidden">
+              <div className="flex items-center gap-3 p-3 bg-card hover:bg-card/80 transition-colors">
+                <div className="w-10 h-14 rounded-lg overflow-hidden bg-muted flex-shrink-0 flex items-center justify-center">
+                  {series.poster ? <img src={series.poster} alt={series.title} className="w-full h-full object-cover" /> : <Tv2 className="w-5 h-5 text-muted-foreground/40" />}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2">
+                    <p className="font-medium text-sm truncate">{series.title}</p>
+                    {series.featured && <span className="px-1.5 py-0.5 bg-primary/20 text-primary text-[9px] font-bold rounded uppercase">Destacada</span>}
+                    {series.hidden && <span className="px-1.5 py-0.5 bg-muted text-muted-foreground text-[9px] rounded uppercase">Oculta</span>}
+                  </div>
+                  <p className="text-xs text-muted-foreground truncate">{[series.category, series.genre, series.year].filter(Boolean).join(' · ')}</p>
+                </div>
+                <div className="flex items-center gap-1 flex-shrink-0">
+                  <Button variant="ghost" size="icon" className="w-8 h-8" onClick={() => setEditSeries(series)}><Pencil className="w-3.5 h-3.5" /></Button>
+                  <Button variant="ghost" size="icon" className="w-8 h-8 text-destructive hover:text-destructive" onClick={() => handleDelete(series.id)}><Trash2 className="w-3.5 h-3.5" /></Button>
+                  <Button variant="ghost" size="icon" className="w-8 h-8" onClick={() => loadExpanded(series.id)}>
+                    {expandedId === series.id ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
+                  </Button>
+                </div>
+              </div>
+
+              {expandedId === series.id && (
+                <div className="border-t border-border p-4 bg-background/50 space-y-4">
+                  <div className="flex items-center justify-between flex-wrap gap-2">
+                    <p className="text-sm font-medium">Temporadas y episodios</p>
+                    <Button size="sm" variant="outline" onClick={() => setShowSeasonForm(series.id)} className="text-xs gap-1">
+                      <Plus className="w-3.5 h-3.5" /> Nueva Temporada
+                    </Button>
+                  </div>
+
+                  <div className="flex gap-2 items-center flex-wrap">
+                    <Input value={seriesScanUrl} onChange={e => setSeriesScanUrl(e.target.value)} placeholder="URL carpeta de episodios para auto-importar..." className="bg-background text-xs h-8 flex-1 min-w-48" />
+                    <Button size="sm" variant="outline" onClick={() => handleScanSeasons(series.id)} disabled={scanningSeasons || !seriesScanUrl.trim()} className="text-xs gap-1">
+                      {scanningSeasons ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Globe className="w-3.5 h-3.5" />}
+                      Auto-importar
+                    </Button>
+                  </div>
+
+                  {showSeasonForm === series.id && (
+                    <div className="bg-card border border-border rounded-lg p-3 space-y-3">
+                      <p className="text-xs font-medium">Nueva temporada</p>
+                      <div className="flex gap-2">
+                        <Input type="number" value={newSeasonForm.seasonNumber} onChange={e => setNewSeasonForm(p => ({ ...p, seasonNumber: e.target.value }))} placeholder="N° temporada" className="bg-background w-28 text-sm h-8" />
+                        <Input value={newSeasonForm.title} onChange={e => setNewSeasonForm(p => ({ ...p, title: e.target.value }))} placeholder="Título (opcional)" className="bg-background flex-1 text-sm h-8" />
+                        <Button size="sm" onClick={handleAddSeason} className="h-8">Crear</Button>
+                        <Button size="sm" variant="ghost" onClick={() => setShowSeasonForm(null)} className="h-8">Cancelar</Button>
+                      </div>
+                    </div>
+                  )}
+
+                  {expandedLoading ? (
+                    <div className="py-4 text-center text-muted-foreground flex items-center justify-center gap-2"><Loader2 className="w-4 h-4 animate-spin" /> Cargando...</div>
+                  ) : !expandedSeries?.seasons.length ? (
+                    <p className="text-sm text-muted-foreground text-center py-4">Sin temporadas. Crea una o usa Auto-importar.</p>
+                  ) : expandedSeries.seasons.map(season => (
+                    <div key={season.id} className="border border-border rounded-lg overflow-hidden">
+                      <div className="flex items-center justify-between gap-2 p-2.5 bg-card">
+                        <p className="text-sm font-medium">{season.title || `Temporada ${season.seasonNumber}`} <span className="text-xs text-muted-foreground font-normal">({season.episodes.length} ep.)</span></p>
+                        <div className="flex gap-1">
+                          <Button size="sm" variant="ghost" className="h-7 text-xs gap-1 px-2" onClick={() => setShowEpForm({ seriesId: series.id, seasonId: season.id })}><Plus className="w-3 h-3" /> Episodio</Button>
+                          <Button size="sm" variant="ghost" className="h-7 w-7 p-0 text-destructive hover:text-destructive" onClick={() => handleDeleteSeason(season.id, series.id)}><Trash2 className="w-3.5 h-3.5" /></Button>
+                        </div>
+                      </div>
+                      {showEpForm?.seasonId === season.id && (
+                        <div className="p-3 border-t border-border bg-background/60 space-y-2">
+                          <p className="text-xs font-medium">Nuevo episodio</p>
+                          <div className="grid grid-cols-2 gap-2">
+                            <Input type="number" value={newEpForm.episodeNumber} onChange={e => setNewEpForm(p => ({ ...p, episodeNumber: e.target.value }))} placeholder="N° episodio" className="bg-background text-xs h-8" />
+                            <Input value={newEpForm.title} onChange={e => setNewEpForm(p => ({ ...p, title: e.target.value }))} placeholder="Título *" className="bg-background text-xs h-8" />
+                            <Input value={newEpForm.filePath} onChange={e => setNewEpForm(p => ({ ...p, filePath: e.target.value }))} placeholder="URL del video *" className="bg-background text-xs h-8 col-span-2" />
+                            <Input value={newEpForm.description} onChange={e => setNewEpForm(p => ({ ...p, description: e.target.value }))} placeholder="Descripción (opcional)" className="bg-background text-xs h-8 col-span-2" />
+                            <Input value={newEpForm.thumbnail} onChange={e => setNewEpForm(p => ({ ...p, thumbnail: e.target.value }))} placeholder="URL thumbnail (opcional)" className="bg-background text-xs h-8 col-span-2" />
+                          </div>
+                          <div className="flex gap-2">
+                            <Button size="sm" onClick={handleAddEpisode} className="h-8 text-xs">Agregar</Button>
+                            <Button size="sm" variant="ghost" onClick={() => setShowEpForm(null)} className="h-8 text-xs">Cancelar</Button>
+                          </div>
+                        </div>
+                      )}
+                      {season.episodes.length > 0 && (
+                        <div className="divide-y divide-border">
+                          {season.episodes.map(ep => (
+                            <div key={ep.id} className="flex items-center gap-2 px-3 py-2 hover:bg-muted/30 transition-colors">
+                              <span className="text-xs text-muted-foreground w-6 flex-shrink-0">E{ep.episodeNumber}</span>
+                              <div className="flex-1 min-w-0">
+                                <p className="text-xs font-medium truncate">{ep.title}</p>
+                                <p className="text-[10px] text-muted-foreground truncate">{ep.filePath}</p>
+                              </div>
+                              <Button size="sm" variant="ghost" className="h-7 w-7 p-0 text-destructive hover:text-destructive flex-shrink-0" onClick={() => handleDeleteEpisode(ep.id, series.id)}><Trash2 className="w-3.5 h-3.5" /></Button>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+
+      <Dialog open={!!editSeries} onOpenChange={(o) => !o && setEditSeries(null)}>
+        <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto bg-card border-border">
+          <DialogHeader><DialogTitle>Editar Serie</DialogTitle></DialogHeader>
+          {editSeries && <SeriesFormFields form={editSeries} setForm={(v) => setEditSeries(p => p ? ({ ...p, ...v } as SeriesRow) : p)} />}
+          <DialogFooter className="gap-2 mt-4">
+            <Button variant="outline" onClick={() => setEditSeries(null)}>Cancelar</Button>
+            <Button onClick={handleUpdate}>Guardar</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}

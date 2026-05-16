@@ -1,0 +1,59 @@
+QUIERO QUE REDISEÑES MI PÁGINA COMPLETAMENTE, COPIANDO EL ESTILO, DISEÑO Y FUNCIONES EXACTAMENTE COMO SE VE EN LAS IMÁGENES QUE TE ENVÍO (ESTILO VIX / NETFLIX), SIGUIENDO ESTAS REGLAS OBLIGATORIAS:
+
+🚫 IMPORTANTE: SOLO MODIFICA LAS SECCIONES DE:
+✅ PELÍCULAS
+✅ SERIES
+✅ CAMBIA EL NOMBRE DE "CANALES" POR: "EN VIVO" (MANTENIENDO SU FUNCIÓN, SOLO CAMBIA EL NOMBRE)
+🚫 NO TOQUES NINGUNA OTRA PARTE, NI CONFIGURACIONES, NI CÓDIGOS QUE NO SEAN LO ANTERIOR.
+
+---
+
+🎨 DISEÑO Y ESTILO (IGUAL QUE EN LA IMAGEN):
+
+1. 🔹 MENÚ LATERAL IZQUIERDO:
+   - Que se vea igual: fondo oscuro, letras claras, íconos pequeños al lado del texto.
+   - Las opciones deben quedar así:
+     • Inicio
+     • Series
+     • Películas
+     • En vivo 👉 (AQUÍ CAMBIA EL NOMBRE, ANTES ERA CANALES, FUNCIÓN IGUAL, SOLO NOMBRE NUEVO)
+   - Cuando pase el mouse o esté seleccionado, se resalte con color azul/gris suave como en la foto.
+   - Arriba que aparezca el perfil o usuario como se ve ahí.
+
+2. 🖼️ PARTE PRINCIPAL (LO MÁS IMPORTANTE):
+   - ARRIBA DEL TODO: Un recuadro grande de pantalla completa con la imagen principal, nombre grande de la película/serie, género, año, y dos botones bonitos: "▶ Ver ahora" (naranja/llamativo) y "ℹ Más información" (gris/oscuro), tal cual en la imagen.
+   - DEBAJO: Filas horizontales de portadas, bien ordenadas, con títulos de sección como: "Recomendado para ti", "Lo más nuevo", "Acción", etc.
+   - EFECTO AL PASAR O SELECCIONAR: Cuando se muevan las flechas o se pase el mouse sobre una portada:
+     ✅ Se Agranda y resalta la imagen.
+     ✅ ARRIBA AUTOMÁTICAMENTE CAMBIA Y MUESTRA: El NOMBRE COMPLETO, la DESCRIPCIÓN, si es serie o película, año, temporadas, género, TODO IGUAL QUE EN LA FOTO.
+     ✅ Que se vea elegante, con fondo oscuro difuminado detrás del texto para que se lea bien.
+   - LAS PORTADAS: Que se vean grandes, claras, de buena calidad, igual que en Vix/Netflix.
+
+3. 📄 PÁGINA DE DESCRIPCIÓN:
+   - Cuando se entre a una película o serie: Que se vea igual que la tercera foto: Imagen grande de fondo oscuro, nombre gigante arriba, debajo género, año, clasificación, y abajo la descripción completa del contenido. Debajo de eso las filas de "Relacionados" o "Lo más buscado".
+
+---
+
+⚙️ CONFIGURACIÓN DE FUNCIONAMIENTO (LO QUE YA HABLAMOS ANTES, MANTÉNLO):
+
+1. 📥 DETECCIÓN DE ENLACES:
+   - En el administrador, en las secciones de Películas y Series, al poner el enlace de: Terabox, MEGA, Google Drive, Dropbox o cualquier nube, el sistema debe DETECTARLO SOLO.
+   - Entrar, leer TODAS las carpetas, subcarpetas, archivos, SIN LÍMITE DE CANTIDAD (aunque sean 10.000 archivos).
+   - Leer formatos: MP4, MKV, AVI, etc.
+
+2. 🏷️ NOMBRES Y ORGANIZACIÓN:
+   - Tomar el nombre EXACTO del archivo, quitar automáticamente .mp4, .mkv, etc.
+   - Organizar las series en orden (Ej: Rápido y Furioso 1, 2, 3...) automáticamente.
+   - Extraer automáticamente la descripción, año y género del nombre del archivo para mostrarlo en pantalla tal cual en el diseño nuevo.
+
+3. ⚡ REPRODUCCIÓN SIN ERRORES:
+   - Convertir el enlace compartido en enlace directo para reproducir DENTRO de la página.
+   - NUNCA mostrar error de cookies, acceso denegado o bloqueos. Configura todos los permisos de seguridad necesarios.
+   - Reproducción rápida, fluida, con mi propio reproductor integrado, igual que las aplicaciones profesionales.
+
+---
+
+✅ RESULTADO FINAL:
+Que mi página se vea, se mueva y funcione **EXACTAMENTE IGUAL** a las fotos que te envié. Diseño elegante, oscuro, bonito, con todos los efectos visuales, y que funcione perfecto con los enlaces de las nubes como lo configuramos.
+
+No cambies nada de código que no sea lo solicitado arriba.

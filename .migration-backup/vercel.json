@@ -1,0 +1,137 @@
+{
+  "version": 2,
+  "installCommand": "CI=true pnpm install --no-frozen-lockfile",
+  "buildCommand": "pnpm --filter @workspace/api-server run build && BASE_PATH=/ PORT=3000 pnpm --filter @workspace/super-tv run build",
+  "outputDirectory": "artifacts/super-tv/dist/public",
+  "functions": {
+    "api/index.js": {
+      "maxDuration": 30,
+      "includeFiles": "artifacts/api-server/dist/**"
+    }
+  },
+  "headers": [
+    {
+      "source": "/api/(.*)",
+      "headers": [
+        { "key": "Access-Control-Allow-Origin", "value": "*" },
+        { "key": "Access-Control-Allow-Methods", "value": "GET,POST,PUT,DELETE,OPTIONS,PATCH" },
+        { "key": "Access-Control-Allow-Headers", "value": "Content-Type,Authorization,X-Requested-With,Range" },
+        { "key": "Access-Control-Expose-Headers", "value": "Content-Length,Content-Range,Accept-Ranges" }
+      ]
+    },
+    {
+      "source": "/(.*)\\.m3u8",
+      "headers": [
+        { "key": "Cache-Control", "value": "public, max-age=5, stale-while-revalidate=10" },
+        { "key": "Access-Control-Allow-Origin", "value": "*" },
+        { "key": "Access-Control-Allow-Headers", "value": "Range,Origin,X-Requested-With,Content-Type,Accept" },
+        { "key": "Access-Control-Expose-Headers", "value": "Content-Length,Content-Range,Accept-Ranges" },
+        { "key": "Vary", "value": "Origin" }
+      ]
+    },
+    {
+      "source": "/(.*)\\.ts",
+      "headers": [
+        { "key": "Cache-Control", "value": "public, max-age=86400, stale-while-revalidate=3600" },
+        { "key": "Access-Control-Allow-Origin", "value": "*" },
+        { "key": "Access-Control-Allow-Headers", "value": "Range" },
+        { "key": "Access-Control-Expose-Headers", "value": "Content-Length,Content-Range,Accept-Ranges" },
+        { "key": "Accept-Ranges", "value": "bytes" }
+      ]
+    },
+    {
+      "source": "/(.*)\\.mpd",
+      "headers": [
+        { "key": "Cache-Control", "value": "public, max-age=5, stale-while-revalidate=10" },
+        { "key": "Access-Control-Allow-Origin", "value": "*" },
+        { "key": "Access-Control-Allow-Headers", "value": "Range" },
+        { "key": "Access-Control-Expose-Headers", "value": "Content-Length,Content-Range,Accept-Ranges" }
+      ]
+    },
+    {
+      "source": "/assets/(.*)",
+      "headers": [
+        { "key": "Cache-Control", "value": "public, max-age=31536000, immutable" }
+      ]
+    },
+    {
+      "source": "/(.*)\\.js",
+      "headers": [
+        { "key": "Cache-Control", "value": "public, max-age=31536000, immutable" }
+      ]
+    },
+    {
+      "source": "/(.*)\\.css",
+      "headers": [
+        { "key": "Cache-Control", "value": "public, max-age=31536000, immutable" }
+      ]
+    },
+    {
+      "source": "/(.*)\\.woff",
+      "headers": [
+        { "key": "Cache-Control", "value": "public, max-age=31536000, immutable" }
+      ]
+    },
+    {
+      "source": "/(.*)\\.woff2",
+      "headers": [
+        { "key": "Cache-Control", "value": "public, max-age=31536000, immutable" }
+      ]
+    },
+    {
+      "source": "/(.*)\\.png",
+      "headers": [
+        { "key": "Cache-Control", "value": "public, max-age=604800, stale-while-revalidate=86400" }
+      ]
+    },
+    {
+      "source": "/(.*)\\.jpg",
+      "headers": [
+        { "key": "Cache-Control", "value": "public, max-age=604800, stale-while-revalidate=86400" }
+      ]
+    },
+    {
+      "source": "/(.*)\\.webp",
+      "headers": [
+        { "key": "Cache-Control", "value": "public, max-age=604800, stale-while-revalidate=86400" }
+      ]
+    },
+    {
+      "source": "/sw.js",
+      "headers": [
+        { "key": "Cache-Control", "value": "no-cache, no-store, must-revalidate" },
+        { "key": "Service-Worker-Allowed", "value": "/" }
+      ]
+    },
+    {
+      "source": "/manifest.json",
+      "headers": [
+        { "key": "Cache-Control", "value": "public, max-age=3600" }
+      ]
+    }
+  ],
+  "routes": [
+    {
+      "src": "/api/options/(.*)",
+      "methods": ["OPTIONS"],
+      "headers": {
+        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Methods": "GET,POST,PUT,DELETE,OPTIONS,PATCH",
+        "Access-Control-Allow-Headers": "Content-Type,Authorization,X-Requested-With,Range",
+        "Access-Control-Max-Age": "86400"
+      },
+      "status": 204
+    },
+    {
+      "src": "/api/(.*)",
+      "dest": "/api/index.js"
+    },
+    {
+      "handle": "filesystem"
+    },
+    {
+      "src": "/(.*)",
+      "dest": "/index.html"
+    }
+  ]
+}
