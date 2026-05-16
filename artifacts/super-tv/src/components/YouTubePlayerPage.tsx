@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
-import { Play, Pause, ArrowLeft, Maximize2, Minimize2, SkipBack, SkipForward, Heart } from 'lucide-react';
+import { Play, Pause, ArrowLeft, Maximize2, Minimize2, SkipBack, SkipForward, Heart, ChevronRight } from 'lucide-react';
 import { loadYouTubeApi } from '@/lib/youtube-api';
 import { saveProgress, saveEpisodeProgress } from '@/lib/user-data';
 import logo from '@assets/imagen_1777670460131.png';
@@ -18,6 +18,13 @@ interface Props {
   seasonId?: number;
   seasonNumber?: number;
   episodeNumber?: number;
+  // Next episode
+  nextEpisodeId?: number;
+  nextEpisodeTitle?: string;
+  nextEpisodeNumber?: number;
+  nextSeasonNumber?: number;
+  seriesTitle?: string;
+  onNextEpisode?: () => void;
 }
 
 function formatTime(s: number): string {
@@ -29,7 +36,7 @@ function formatTime(s: number): string {
   return `${m}:${String(sec).padStart(2, '0')}`;
 }
 
-export function YouTubePlayerPage({ videoId, title, onBack, isFav, onFavToggle, movieId, startFrom, episodeId, seriesId, seasonId, seasonNumber, episodeNumber }: Props) {
+export function YouTubePlayerPage({ videoId, title, onBack, isFav, onFavToggle, movieId, startFrom, episodeId, seriesId, seasonId, seasonNumber, episodeNumber, nextEpisodeId, nextEpisodeTitle, nextEpisodeNumber, nextSeasonNumber, seriesTitle, onNextEpisode }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const playerDivRef = useRef<HTMLDivElement>(null);
   const ytPlayerRef = useRef<any>(null);
@@ -46,6 +53,7 @@ export function YouTubePlayerPage({ videoId, title, onBack, isFav, onFavToggle, 
   const [isCssFullscreen, setIsCssFullscreen] = useState(true);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
+  const [showNextEp, setShowNextEp] = useState(false);
 
   const isFullscreen = isNativeFullscreen || isCssFullscreen;
 
@@ -65,6 +73,10 @@ export function YouTubePlayerPage({ videoId, title, onBack, isFav, onFavToggle, 
         const d = yt.getDuration?.() ?? 0;
         setCurrentTime(t);
         if (d > 0) setDuration(d);
+        // Show next episode button 10 seconds before the end
+        if (nextEpisodeId && d > 30 && d - t <= 10 && t > 0) {
+          setShowNextEp(true);
+        }
         // Save progress every 5 seconds
         if (t > 10 && t - lastSaveRef.current >= 5) {
           lastSaveRef.current = t;
@@ -126,6 +138,7 @@ export function YouTubePlayerPage({ videoId, title, onBack, isFav, onFavToggle, 
             if (e.data === 0) {
               setIsPlaying(false);
               setYtEnded(true);
+              if (nextEpisodeId) setShowNextEp(true);
               // Clear saved progress when video finishes
               if (episodeId) {
                 try { localStorage.removeItem(`supertv_eprog_${episodeId}`); } catch {}
@@ -258,8 +271,12 @@ export function YouTubePlayerPage({ videoId, title, onBack, isFav, onFavToggle, 
         case ' ':
         case 'Enter':
           e.preventDefault();
-          if (ytEnded) {
-            if (endBtnIndex === 0) {
+          if (showNextEp && !ytEnded && onNextEpisode) {
+            onNextEpisode();
+          } else if (ytEnded) {
+            if (showNextEp && onNextEpisode) {
+              onNextEpisode();
+            } else if (endBtnIndex === 0) {
               ytPlayerRef.current?.seekTo(0, true);
               ytPlayerRef.current?.playVideo();
               setHasStarted(true);
@@ -295,7 +312,7 @@ export function YouTubePlayerPage({ videoId, title, onBack, isFav, onFavToggle, 
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ytEnded, endBtnIndex, hasStarted, skip, togglePlay, startPlayback, doToggleFullscreen, isNativeFullscreen, isCssFullscreen, onBack]);
+  }, [ytEnded, endBtnIndex, hasStarted, showNextEp, skip, togglePlay, startPlayback, doToggleFullscreen, isNativeFullscreen, isCssFullscreen, onBack, onNextEpisode]);
 
   const progress = duration > 0 ? (currentTime / duration) * 100 : 0;
   const ctrlBtn = 'w-11 h-11 rounded-xl bg-black/50 backdrop-blur border border-white/15 text-white flex items-center justify-center active:scale-95 transition-all';
@@ -456,14 +473,46 @@ export function YouTubePlayerPage({ videoId, title, onBack, isFav, onFavToggle, 
         </div>
       </div>
 
+      {/* Next episode overlay — appears 10s before end */}
+      {showNextEp && onNextEpisode && nextEpisodeId && (
+        <div
+          className="absolute bottom-28 right-4 z-40 bg-black/90 backdrop-blur border border-white/25 rounded-xl px-4 py-3 flex items-center gap-3 shadow-2xl ring-1 ring-white/15"
+          onClick={e => e.stopPropagation()}
+        >
+          <div className="text-sm text-white leading-snug">
+            <div className="text-white/50 text-[11px] mb-0.5">Siguiente capítulo</div>
+            <div className="font-semibold truncate max-w-[180px]">{nextEpisodeTitle || `Capítulo ${nextEpisodeNumber}`}</div>
+            {(nextSeasonNumber || nextEpisodeNumber) && (
+              <div className="text-white/40 text-[10px] mt-0.5">
+                {nextSeasonNumber ? `T${nextSeasonNumber}` : ''}{nextEpisodeNumber ? `E${nextEpisodeNumber}` : ''}
+              </div>
+            )}
+          </div>
+          <button
+            onClick={e => { e.stopPropagation(); onNextEpisode(); }}
+            className="flex items-center gap-1 px-3 py-2 bg-red-600 text-white rounded-lg text-xs font-semibold hover:bg-red-500 active:scale-95 transition-all whitespace-nowrap flex-shrink-0"
+          >
+            Siguiente <ChevronRight className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      )}
+
       {/* End-screen overlay */}
       {ytEnded && (
         <div
           className="absolute inset-0 z-40 bg-black/80 flex flex-col items-center justify-center gap-5"
           onClick={e => e.stopPropagation()}
         >
-          <p className="text-white/80 text-lg font-semibold">Video terminado</p>
-          <div className="flex gap-3">
+          <p className="text-white/80 text-lg font-semibold">Capítulo terminado</p>
+          <div className="flex gap-3 flex-wrap justify-center">
+            {onNextEpisode && nextEpisodeId && (
+              <button
+                onClick={e => { e.stopPropagation(); onNextEpisode(); }}
+                className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-red-600 text-white font-semibold text-sm hover:bg-red-500 active:scale-95 transition-all ring-2 ring-red-400/60"
+              >
+                Siguiente capítulo <ChevronRight className="w-4 h-4" />
+              </button>
+            )}
             <button
               onClick={e => {
                 e.stopPropagation();
@@ -471,6 +520,7 @@ export function YouTubePlayerPage({ videoId, title, onBack, isFav, onFavToggle, 
                 ytPlayerRef.current?.playVideo();
                 setHasStarted(true);
                 setYtEnded(false);
+                setShowNextEp(false);
               }}
               className={`px-5 py-2.5 rounded-xl border text-sm font-medium transition-all ${endBtnIndex === 0 ? 'bg-white/30 border-white text-white ring-2 ring-white scale-105' : 'bg-white/15 border-white/20 text-white hover:bg-white/25'}`}
             >
@@ -478,7 +528,7 @@ export function YouTubePlayerPage({ videoId, title, onBack, isFav, onFavToggle, 
             </button>
             <button
               onClick={e => { e.stopPropagation(); onBack(); }}
-              className={`px-5 py-2.5 rounded-xl text-white font-semibold text-sm transition-all ${endBtnIndex === 1 ? 'bg-red-500 ring-2 ring-white scale-105' : 'bg-red-600 hover:bg-red-500'}`}
+              className={`px-5 py-2.5 rounded-xl text-white font-semibold text-sm transition-all ${endBtnIndex === 1 ? 'bg-white/25 ring-2 ring-white scale-105' : 'bg-white/10 hover:bg-white/20'}`}
             >
               Cerrar
             </button>

@@ -4495,6 +4495,11 @@ function SeriesManager() {
   const [ytImporting, setYtImporting] = useState(false);
   const [ytPreview, setYtPreview] = useState<{ playlistId: string; title: string; description: string; thumbnail: string; channelTitle: string; itemCount: number; items: Array<{ videoId: string; title: string; thumbnail: string; position: number }> } | null>(null);
   const [ytForm, setYtForm] = useState({ title: '', category: '', genre: '', year: '', poster: '', banner: '' });
+  const [showYtManual, setShowYtManual] = useState(false);
+  const [ytManualTitle, setYtManualTitle] = useState('');
+  const [ytManualCategory, setYtManualCategory] = useState('');
+  const [ytManualLinks, setYtManualLinks] = useState<Array<{ url: string; title: string }>>([{ url: '', title: '' }]);
+  const [ytManualCreating, setYtManualCreating] = useState(false);
 
   const form0: Partial<SeriesRow> = { title: '', description: '', poster: '', banner: '', category: '', genre: '', year: undefined, featured: false, hidden: false };
   const [createForm, setCreateForm] = useState<Partial<SeriesRow>>(form0);
@@ -4669,6 +4674,51 @@ function SeriesManager() {
     finally { setYtImporting(false); }
   };
 
+  const handleYtManualCreate = async () => {
+    const validLinks = ytManualLinks.filter(l => l.url.trim());
+    if (!ytManualTitle.trim()) { toast({ variant: 'destructive', title: 'El título es requerido' }); return; }
+    if (validLinks.length === 0) { toast({ variant: 'destructive', title: 'Agrega al menos un enlace de YouTube' }); return; }
+    setYtManualCreating(true);
+    try {
+      const sr = await fetch(`${BASE_API}/api/series`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${getAdminToken()}` },
+        body: JSON.stringify({ title: ytManualTitle.trim(), category: ytManualCategory.trim() || undefined }),
+      });
+      if (!sr.ok) { toast({ variant: 'destructive', title: 'Error al crear la serie' }); setYtManualCreating(false); return; }
+      const series = await sr.json();
+      const snr = await fetch(`${BASE_API}/api/seasons`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${getAdminToken()}` },
+        body: JSON.stringify({ seriesId: series.id, seasonNumber: 1, title: 'Temporada 1' }),
+      });
+      if (!snr.ok) { toast({ variant: 'destructive', title: 'Error al crear temporada' }); setYtManualCreating(false); return; }
+      const season = await snr.json();
+      for (let i = 0; i < validLinks.length; i++) {
+        const link = validLinks[i];
+        await fetch(`${BASE_API}/api/episodes`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${getAdminToken()}` },
+          body: JSON.stringify({
+            seriesId: series.id, seasonId: season.id,
+            episodeNumber: i + 1,
+            title: link.title.trim() || `Episodio ${i + 1}`,
+            filePath: link.url.trim(),
+            videoFormat: 'youtube',
+          }),
+        });
+      }
+      toast({ title: `Serie "${ytManualTitle.trim()}" creada con ${validLinks.length} episodio(s)` });
+      setShowYtManual(false);
+      setYtManualTitle(''); setYtManualCategory('');
+      setYtManualLinks([{ url: '', title: '' }]);
+      refresh();
+    } catch (e: unknown) {
+      toast({ variant: 'destructive', title: 'Error', description: e instanceof Error ? e.message : '' });
+    }
+    setYtManualCreating(false);
+  };
+
   const filtered = seriesList.filter(s => !searchQ || s.title.toLowerCase().includes(searchQ.toLowerCase()));
 
   const SeriesFormFields = ({ form, setForm }: { form: Partial<SeriesRow>; setForm: (v: Partial<SeriesRow>) => void }) => (
@@ -4735,6 +4785,9 @@ function SeriesManager() {
           </Button>
           <Button size="sm" variant="outline" onClick={() => { setShowYtPlaylist(p => !p); setYtPreview(null); }} className="flex items-center gap-1.5">
             <Play className="w-4 h-4" /> Playlist YouTube
+          </Button>
+          <Button size="sm" variant="outline" onClick={() => setShowYtManual(p => !p)} className="flex items-center gap-1.5">
+            <Youtube className="w-4 h-4" /> Serie YouTube
           </Button>
           <Button size="sm" onClick={() => setShowCreate(true)} className="flex items-center gap-1.5">
             <Plus className="w-4 h-4" /> Nueva Serie
@@ -4823,6 +4876,64 @@ function SeriesManager() {
               </div>
             </div>
           )}
+        </div>
+      )}
+
+      {showYtManual && (
+        <div className="bg-secondary/30 rounded-xl p-4 space-y-4 border border-border">
+          <p className="text-sm font-medium flex items-center gap-2"><Youtube className="w-4 h-4 text-red-500" /> Crear serie con enlaces de YouTube</p>
+          <p className="text-xs text-muted-foreground">Escribe el título y pega los enlaces de YouTube en orden. Cada enlace será un capítulo.</p>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div className="space-y-1">
+              <label className="text-xs text-muted-foreground">Título de la serie *</label>
+              <Input value={ytManualTitle} onChange={e => setYtManualTitle(e.target.value)} placeholder="Ej: La Ley Divina" className="bg-background" />
+            </div>
+            <div className="space-y-1">
+              <label className="text-xs text-muted-foreground">Categoría</label>
+              <Input value={ytManualCategory} onChange={e => setYtManualCategory(e.target.value)} placeholder="Drama, Acción..." className="bg-background" />
+            </div>
+          </div>
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <label className="text-xs font-medium text-muted-foreground">
+                Capítulos ({ytManualLinks.filter(l => l.url.trim()).length} con enlace)
+              </label>
+              <Button size="sm" variant="outline" className="h-7 text-xs gap-1" onClick={() => setYtManualLinks(ls => [...ls, { url: '', title: '' }])}>
+                <Plus className="w-3 h-3" /> Añadir capítulo
+              </Button>
+            </div>
+            <div className="space-y-2 max-h-80 overflow-y-auto pr-1">
+              {ytManualLinks.map((link, i) => (
+                <div key={i} className="flex items-center gap-2">
+                  <span className="text-xs text-muted-foreground w-6 text-right flex-shrink-0 font-medium">{i + 1}.</span>
+                  <Input
+                    value={link.url}
+                    onChange={e => setYtManualLinks(ls => ls.map((l, j) => j === i ? { ...l, url: e.target.value } : l))}
+                    placeholder="https://www.youtube.com/watch?v=..."
+                    className="bg-background text-xs h-8 flex-1 min-w-0"
+                  />
+                  <Input
+                    value={link.title}
+                    onChange={e => setYtManualLinks(ls => ls.map((l, j) => j === i ? { ...l, title: e.target.value } : l))}
+                    placeholder={`Capítulo ${i + 1}`}
+                    className="bg-background text-xs h-8 w-32 flex-shrink-0"
+                  />
+                  {ytManualLinks.length > 1 && (
+                    <Button size="sm" variant="ghost" className="h-8 w-8 p-0 text-destructive hover:text-destructive flex-shrink-0" onClick={() => setYtManualLinks(ls => ls.filter((_, j) => j !== i))}>
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </Button>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+          <div className="flex gap-2 justify-end">
+            <Button variant="outline" onClick={() => { setShowYtManual(false); setYtManualTitle(''); setYtManualCategory(''); setYtManualLinks([{ url: '', title: '' }]); }}>Cancelar</Button>
+            <Button onClick={handleYtManualCreate} disabled={ytManualCreating || !ytManualTitle.trim() || ytManualLinks.filter(l => l.url.trim()).length === 0}>
+              {ytManualCreating ? <Loader2 className="w-4 h-4 animate-spin mr-1" /> : null}
+              Crear Serie ({ytManualLinks.filter(l => l.url.trim()).length} cap.)
+            </Button>
+          </div>
         </div>
       )}
 

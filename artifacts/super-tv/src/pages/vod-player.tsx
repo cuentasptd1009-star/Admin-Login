@@ -435,6 +435,12 @@ export default function VodPlayerPage() {
       seasonId={seasonId ? Number(seasonId) : undefined}
       seasonNumber={seasonNumber ? Number(seasonNumber) : undefined}
       episodeNumber={episodeNumber ? Number(episodeNumber) : undefined}
+      nextEpisodeId={nextEpisodeId ? Number(nextEpisodeId) : undefined}
+      nextEpisodeTitle={nextEpisodeTitle || undefined}
+      nextEpisodeNumber={nextEpisodeNumber ? Number(nextEpisodeNumber) : undefined}
+      nextSeasonNumber={nextSeasonNumber ? Number(nextSeasonNumber) : undefined}
+      seriesTitle={seriesTitle || undefined}
+      onNextEpisode={nextEpisodeId ? goNextEpisode : undefined}
     />;
   }
 
