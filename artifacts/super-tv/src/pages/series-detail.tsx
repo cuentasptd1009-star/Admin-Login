@@ -61,7 +61,7 @@ export default function SeriesDetail() {
 
   useEffect(() => {
     if (sdZone === 'episodes' && focusedEpRef.current) {
-      focusedEpRef.current.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      focusedEpRef.current.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'center' });
     }
   }, [sdZone, epIdx]);
 

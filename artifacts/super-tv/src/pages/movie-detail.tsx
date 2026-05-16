@@ -199,7 +199,7 @@ export default function MovieDetail() {
 
   useEffect(() => {
     if (mvZone === 'grid' && focusedGridRef.current) {
-      focusedGridRef.current.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      focusedGridRef.current.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'center' });
     }
   }, [mvZone, gridRow, gridCol]);
 

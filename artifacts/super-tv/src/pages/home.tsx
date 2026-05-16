@@ -704,7 +704,7 @@ export default function Home() {
   useEffect(() => {
     if (zone !== 'rows') return;
     const el = document.querySelector('[data-tv-focused="true"]') as HTMLElement | null;
-    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'nearest' });
+    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'center' });
   }, [rowIndex, colIndex, zone]);
 
   useEffect(() => {
