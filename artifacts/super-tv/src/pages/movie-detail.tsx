@@ -8,6 +8,7 @@ import { useEffect, useState, useMemo, useRef, useCallback } from 'react';
 import logo from '@assets/imagen_1777670460131.png';
 import { ContentCard } from '@/components/ContentCard';
 import { YouTubePlayerPage } from '@/components/YouTubePlayerPage';
+import { useTvKeyboard } from '@/hooks/use-tv-keyboard';
 
 function formatProgress(secs: number): string {
   const h = Math.floor(secs / 3600);
@@ -26,7 +27,7 @@ function getMovieGridCols(): number {
   return 2;
 }
 
-type MvZone = 'buttons' | 'catpills' | 'grid';
+type MvZone = 'buttons' | 'catpills' | 'search' | 'grid';
 
 type YtResult = { videoId: string; title: string; thumbnail: string; channel: string; year?: string; duration: string };
 type ArchiveResult = { identifier: string; title: string; year?: string; creator?: string; thumbnail: string };
@@ -46,6 +47,8 @@ export default function MovieDetail() {
   const [gridRow, setGridRow] = useState(0);
   const [gridCol, setGridCol] = useState(0);
   const focusedGridRef = useRef<HTMLDivElement | null>(null);
+  const searchInputRef = useRef<HTMLInputElement | null>(null);
+  const { openKeyboard } = useTvKeyboard();
 
   const [ytResults, setYtResults] = useState<YtResult[]>([]);
   const [archiveResults, setArchiveResults] = useState<ArchiveResult[]>([]);
@@ -201,7 +204,7 @@ export default function MovieDetail() {
   useEffect(() => {
     if (mvZone === 'buttons') {
       window.scrollTo({ top: 0, behavior: 'smooth' });
-    } else if (mvZone === 'catpills') {
+    } else if (mvZone === 'catpills' || mvZone === 'search') {
       const el = document.querySelector('[data-mv-zone="catpills"]') as HTMLElement | null;
       if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
     } else if (mvZone === 'grid' && focusedGridRef.current) {
@@ -213,7 +216,15 @@ export default function MovieDetail() {
     const handleKeyDown = (e: KeyboardEvent) => {
       const activeEl = document.activeElement;
       const isInputFocused = activeEl instanceof HTMLInputElement || activeEl instanceof HTMLTextAreaElement || (activeEl instanceof HTMLElement && activeEl.isContentEditable);
-      if (isInputFocused) return;
+      if (isInputFocused) {
+        const key = normalizeKey(e);
+        if (key === 'Escape' || key === 'Backspace') {
+          e.preventDefault();
+          (activeEl as HTMLElement).blur();
+          setMvZone('search');
+        }
+        return;
+      }
       if (mvZone === 'buttons') {
         switch (normalizeKey(e)) {
           case 'ArrowLeft':
@@ -256,7 +267,11 @@ export default function MovieDetail() {
             break;
           case 'ArrowRight':
             e.preventDefault();
-            setCatPillIdx(p => Math.min(allPills.length - 1, p + 1));
+            if (catPillIdx < allPills.length - 1) {
+              setCatPillIdx(p => p + 1);
+            } else {
+              setMvZone('search');
+            }
             break;
           case 'MediaPlayPause':
           case 'Enter': {
@@ -274,6 +289,34 @@ export default function MovieDetail() {
           case 'Escape':
             e.preventDefault();
             setMvZone('buttons');
+            break;
+        }
+      } else if (mvZone === 'search') {
+        switch (normalizeKey(e)) {
+          case 'MediaPlayPause':
+          case 'Enter':
+            e.preventDefault();
+            openKeyboard(searchInputRef.current, {
+              value: search,
+              onChange: v => setSearch(v),
+              onConfirm: () => setMvZone('grid'),
+              label: 'Buscar película...',
+            });
+            break;
+          case 'ArrowLeft':
+            e.preventDefault();
+            setMvZone('catpills');
+            setCatPillIdx(allPills.length - 1);
+            break;
+          case 'ArrowDown':
+            e.preventDefault();
+            if (related.length > 0) { setMvZone('grid'); setGridRow(0); setGridCol(0); }
+            break;
+          case 'ArrowUp':
+          case 'Escape':
+          case 'Backspace':
+            e.preventDefault();
+            setMvZone('catpills');
             break;
         }
       } else {
@@ -324,7 +367,7 @@ export default function MovieDetail() {
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [mvZone, btnIndex, catPillIdx, gridRow, gridCol, related, actionButtons, isFav, categories, allPills, filterCat]);
+  }, [mvZone, btnIndex, catPillIdx, gridRow, gridCol, related, actionButtons, isFav, categories, allPills, filterCat, search, openKeyboard]);
 
   if (isLoading) {
     return (
@@ -510,7 +553,10 @@ export default function MovieDetail() {
             <p className="text-white/30 text-xs pt-1">◀▶ Navegar · Enter Seleccionar · ▼ Categorías</p>
           )}
           {mvZone === 'catpills' && (
-            <p className="text-white/30 text-xs pt-1">◀▶ Categoría · Enter Filtrar · ▼ Películas · ▲ Volver</p>
+            <p className="text-white/30 text-xs pt-1">◀▶ Categoría · ▶▶ Buscar · Enter Filtrar · ▼ Películas · ▲ Volver</p>
+          )}
+          {mvZone === 'search' && (
+            <p className="text-white/30 text-xs pt-1">Enter Escribir · ◀ Categorías · ▼ Películas · ▲ Volver</p>
           )}
         </div>
       </div>
@@ -550,11 +596,14 @@ export default function MovieDetail() {
             <div className="relative">
               <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-white/30" />
               <input
+                ref={searchInputRef}
                 type="text"
                 value={search}
                 onChange={e => setSearch(e.target.value)}
+                onFocus={() => setMvZone('search')}
                 placeholder="Buscar película..."
-                className="pl-8 pr-8 py-1.5 text-sm bg-white/8 border border-white/10 rounded-xl w-full sm:w-48 text-white placeholder:text-white/30 focus:outline-none focus:border-white/25"
+                className={`pl-8 pr-8 py-1.5 text-sm bg-white/8 border rounded-xl w-full sm:w-48 text-white placeholder:text-white/30 focus:outline-none transition-all
+                  ${mvZone === 'search' ? 'border-white/60 bg-white/12 ring-2 ring-white/40 scale-105' : 'border-white/10 focus:border-white/25'}`}
               />
               {search && (
                 <button onClick={() => setSearch('')} className="absolute right-2 top-1/2 -translate-y-1/2 text-white/30 hover:text-white">
