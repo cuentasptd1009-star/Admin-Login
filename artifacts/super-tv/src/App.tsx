@@ -1,5 +1,5 @@
 import { lazy, Suspense } from "react";
-import { Switch, Route, Router as WouterRouter } from "wouter";
+import { Switch, Route, Router as WouterRouter, useSearch } from "wouter";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -42,13 +42,23 @@ const queryClient = new QueryClient({
   },
 });
 
+function PlayerRoute() {
+  const search = useSearch();
+  return <PlayerPage key={search} />;
+}
+
+function VodPlayerRoute() {
+  const search = useSearch();
+  return <VodPlayerPage key={search} />;
+}
+
 function Router() {
   return (
     <Switch>
       <Route path="/" component={Login} />
       <Route path="/home" component={Home} />
-      <Route path="/player" component={PlayerPage} />
-      <Route path="/vod-player" component={VodPlayerPage} />
+      <Route path="/player" component={PlayerRoute} />
+      <Route path="/vod-player" component={VodPlayerRoute} />
       <Route path="/pelicula/:id" component={MovieDetail} />
       <Route path="/serie/:id" component={SeriesDetail} />
       <Route path="/admin" component={AdminPanel} />

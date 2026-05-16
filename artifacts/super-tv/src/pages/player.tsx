@@ -74,6 +74,10 @@ export default function PlayerPage() {
   const nextEpisodeId = searchParams.get('nextEpisodeId');
   const nextSeasonId = searchParams.get('nextSeasonId');
   const nextEpisodeTitle = searchParams.get('nextEpisodeTitle');
+  const nextEpisodeUrl = searchParams.get('nextEpisodeUrl') || '';
+  const nextEpisodeFormat = searchParams.get('nextEpisodeFormat') || '';
+  const nextSeasonNumber = searchParams.get('nextSeasonNumber') || '';
+  const nextEpisodeNumber = searchParams.get('nextEpisodeNumber') || '';
 
   const backUrl = episodeId && seriesId ? `/serie/${seriesId}` : movieId ? `/pelicula/${movieId}` : type === 'movie' ? '/home?tab=movies' : type === 'episode' ? '/home?tab=series' : type === 'channel' ? '/home?tab=channels' : '/home';
 
@@ -556,6 +560,23 @@ export default function PlayerPage() {
     goToChannel((channelIndex + 1) % channels.length);
   }, [goToChannel, channelIndex, channels.length]);
 
+  const goNextEpisode = useCallback(() => {
+    if (!nextEpisodeId || !seriesId) return;
+    const params = new URLSearchParams({
+      url: nextEpisodeUrl,
+      title: nextEpisodeTitle || 'Episodio siguiente',
+      type: 'episode',
+      episodeId: nextEpisodeId,
+      seriesId,
+      seasonId: nextSeasonId || seasonId || '',
+      seasonNumber: nextSeasonNumber || seasonNumber || '',
+      episodeNumber: nextEpisodeNumber || '',
+      seriesTitle: seriesTitle || '',
+    });
+    if (nextEpisodeFormat) params.set('format', nextEpisodeFormat);
+    setLocation(`/player?${params.toString()}`);
+  }, [nextEpisodeId, nextEpisodeUrl, nextEpisodeTitle, nextSeasonId, nextSeasonNumber, nextEpisodeNumber, nextEpisodeFormat, seriesId, seasonId, seasonNumber, seriesTitle]);
+
   const controls = ['back', ...(hasChannels ? ['prevch'] : []), 'skipback', 'play', 'skipfwd', ...(hasChannels ? ['nextch'] : []), 'mute', 'minimize', 'fullscreen'];
 
   useEffect(() => {
@@ -685,7 +706,24 @@ export default function PlayerPage() {
   if (currentFormat === 'youtube' || detectFormat(currentUrl) === 'youtube') {
     const ytId = extractYouTubeId(currentUrl);
     if (!ytId) return <div className="flex items-center justify-center h-screen bg-black text-white/60 text-sm">URL de YouTube inválida</div>;
-    return <YouTubePlayerPage videoId={ytId} title={currentTitle} onBack={() => setLocation(backUrl)} />;
+    return (
+      <YouTubePlayerPage
+        videoId={ytId}
+        title={currentTitle}
+        onBack={() => setLocation(backUrl)}
+        episodeId={episodeId ? Number(episodeId) : undefined}
+        seriesId={seriesId ? Number(seriesId) : undefined}
+        seasonId={seasonId ? Number(seasonId) : undefined}
+        seasonNumber={seasonNumber ? Number(seasonNumber) : undefined}
+        episodeNumber={episodeNumber ? Number(episodeNumber) : undefined}
+        seriesTitle={seriesTitle || undefined}
+        nextEpisodeId={nextEpisodeId ? Number(nextEpisodeId) : undefined}
+        nextEpisodeTitle={nextEpisodeTitle || undefined}
+        nextEpisodeNumber={nextEpisodeNumber ? Number(nextEpisodeNumber) : undefined}
+        nextSeasonNumber={nextSeasonNumber ? Number(nextSeasonNumber) : undefined}
+        onNextEpisode={nextEpisodeId ? goNextEpisode : undefined}
+      />
+    );
   }
 
   return (
