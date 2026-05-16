@@ -28,7 +28,9 @@ const router = Router();
 
 const ADMIN_USERNAME = "admin@admin";
 
-async function getAdminPasswordHash(): Promise<string | null> {
+const DEFAULT_ADMIN_PASSWORD = "admin";
+
+async function getAdminPasswordHash(): Promise<string> {
   // ADMIN_PASSWORD env var always wins — use this to recover access if locked out
   if (process.env.ADMIN_PASSWORD) {
     return hashPassword(process.env.ADMIN_PASSWORD);
@@ -39,10 +41,12 @@ async function getAdminPasswordHash(): Promise<string | null> {
       .from(settingsTable)
       .where(eq(settingsTable.key, "adminPasswordHash"))
       .limit(1);
-    return stored?.value ?? null;
+    if (stored?.value) return stored.value;
   } catch {
-    return null;
+    // fall through to default
   }
+  // No password configured anywhere — use default so admin can always log in
+  return hashPassword(DEFAULT_ADMIN_PASSWORD);
 }
 
 router.post("/auth/login", async (req: Request, res: Response) => {
@@ -124,10 +128,6 @@ router.post("/auth/admin-login", async (req: Request, res: Response) => {
   const { username, password } = parsed.data;
 
   const adminPasswordHash = await getAdminPasswordHash();
-  if (!adminPasswordHash) {
-    res.status(503).json({ error: "Admin password not configured. Set ADMIN_PASSWORD env var." });
-    return;
-  }
   if (username === ADMIN_USERNAME && verifyPassword(password, adminPasswordHash)) {
     const token = generateToken();
     await db.insert(adminSessionsTable).values({

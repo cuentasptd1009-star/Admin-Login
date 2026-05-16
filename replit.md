@@ -49,7 +49,7 @@ Una plataforma de streaming IPTV y VOD con panel de administración, soporte par
 
 ## User preferences
 
-- Admin username: `admin@admin`, password set via `ADMIN_PASSWORD` env var.
+- Admin username: `admin@admin`, password set via `ADMIN_PASSWORD` env var. If the secret is not set, the default fallback password is `admin` — change it via the admin settings panel after first login.
 - All channels and access codes must be preserved when making changes.
 
 ## Gotchas
