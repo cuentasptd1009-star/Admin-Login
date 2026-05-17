@@ -2464,6 +2464,14 @@ function MoviesManager() {
   const [ytUrlCategory, setYtUrlCategory] = useState('');
   const [ytUrlImporting, setYtUrlImporting] = useState(false);
   const [ytUrlImported, setYtUrlImported] = useState(false);
+  // YouTube Bulk URL Import
+  const [showYtBulkImport, setShowYtBulkImport] = useState(false);
+  const [ytBulkText, setYtBulkText] = useState('');
+  const [ytBulkCategory, setYtBulkCategory] = useState('');
+  const [ytBulkDetected, setYtBulkDetected] = useState<Array<{ url: string; videoId: string; title: string; thumbnail: string; status: 'pending' | 'ok' | 'error' }>>([]);
+  const [ytBulkDetecting, setYtBulkDetecting] = useState(false);
+  const [ytBulkImportingAll, setYtBulkImportingAll] = useState(false);
+  const [ytBulkResults, setYtBulkResults] = useState<{ ok: number; fail: number } | null>(null);
 
   const fetchYtUrlInfo = async (url: string) => {
     if (!url.trim()) return;
@@ -2505,7 +2513,71 @@ function MoviesManager() {
     finally { setYtUrlImporting(false); }
   };
 
-  const archiveSearch = async (page = 1) => {
+  const extractYtVideoId = (url: string): string | null => {
+    try {
+      const u = new URL(url.trim());
+      if (u.hostname.includes('youtu.be')) return u.pathname.slice(1).split('?')[0];
+      if (u.hostname.includes('youtube.com')) {
+        if (u.pathname === '/watch') return u.searchParams.get('v');
+        const m = u.pathname.match(/\/(?:embed|v|shorts)\/([^/?]+)/);
+        if (m) return m[1];
+      }
+    } catch {}
+    return null;
+  };
+
+  const handleYtBulkDetect = async () => {
+    const urls = ytBulkText.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+    if (!urls.length) { toast({ variant: 'destructive', title: 'Pega al menos una URL de YouTube' }); return; }
+    setYtBulkDetecting(true);
+    setYtBulkResults(null);
+    const detected: Array<{ url: string; videoId: string; title: string; thumbnail: string; status: 'pending' | 'ok' | 'error' }> = [];
+    for (const url of urls) {
+      const videoId = extractYtVideoId(url);
+      if (!videoId) { detected.push({ url, videoId: '', title: url, thumbnail: '', status: 'error' }); continue; }
+      try {
+        const token = getToken('admin');
+        const r = await fetch(`${BASE_URL}/api/youtube/url-info?url=${encodeURIComponent(url)}`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (r.ok) {
+          const d = await r.json();
+          detected.push({ url, videoId: d.videoId || videoId, title: d.title || url, thumbnail: d.thumbnailHQ || d.thumbnail || `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`, status: 'ok' });
+        } else {
+          detected.push({ url, videoId, title: `Video ${videoId}`, thumbnail: `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`, status: 'ok' });
+        }
+      } catch {
+        detected.push({ url, videoId, title: `Video ${videoId}`, thumbnail: `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`, status: 'ok' });
+      }
+    }
+    setYtBulkDetected(detected);
+    setYtBulkDetecting(false);
+  };
+
+  const handleYtBulkImportAll = async () => {
+    const toImport = ytBulkDetected.filter(d => d.status === 'ok' && d.videoId);
+    if (!toImport.length) { toast({ variant: 'destructive', title: 'No hay videos válidos para importar' }); return; }
+    setYtBulkImportingAll(true);
+    let ok = 0; let fail = 0;
+    for (const item of toImport) {
+      try {
+        const token = getToken('admin');
+        const r = await fetch(`${BASE_URL}/api/youtube/import`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+          body: JSON.stringify({ videoId: item.videoId, title: item.title, thumbnail: item.thumbnail, category: ytBulkCategory || undefined }),
+        });
+        if (r.ok) ok++; else fail++;
+      } catch { fail++; }
+    }
+    qc.invalidateQueries({ queryKey: getListMoviesQueryKey() });
+    setYtBulkResults({ ok, fail });
+    setYtBulkImportingAll(false);
+    if (fail === 0) toast({ title: `${ok} película(s) importada(s) exitosamente` });
+    else toast({ variant: 'destructive', title: `${ok} importadas, ${fail} fallaron` });
+  };
+
+    const archiveSearch = async (page = 1) => {
     if (!archiveQuery.trim()) return;
     setArchiveLoading(true);
     setArchiveError('');
@@ -2933,6 +3005,9 @@ function MoviesManager() {
             </Button>
             <Button size="sm" variant="outline" onClick={() => { setShowYtUrl(true); setYtUrlInput(''); setYtUrlPreview(null); setYtUrlError(''); setYtUrlImported(false); }}>
               <Link2 className="w-4 h-4 mr-2" />URL YouTube
+            </Button>
+            <Button size="sm" variant="outline" onClick={() => { setShowYtBulkImport(true); setYtBulkText(''); setYtBulkDetected([]); setYtBulkResults(null); setYtBulkCategory(''); }}>
+              <Youtube className="w-4 h-4 mr-2 text-red-500" />Lista URLs YouTube
             </Button>
             <Button size="sm" onClick={() => setShowForm(!showForm)}><Plus className="w-4 h-4 mr-2" />Nueva Película</Button>
           </>}
