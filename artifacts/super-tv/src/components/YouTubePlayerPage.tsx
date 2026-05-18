@@ -433,6 +433,11 @@ export function YouTubePlayerPage({ videoId, title, onBack, isFav, onFavToggle, 
         </div>
       )}
 
+      {/* Black bar at bottom — hides YouTube branding during load, disappears once playing */}
+      {!hasStarted && (
+        <div className="absolute bottom-0 inset-x-0 h-14 z-[14] bg-black pointer-events-none" />
+      )}
+
       {/* Super TV watermark */}
       <div className="absolute bottom-16 right-3 z-[15] pointer-events-none">
         <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-black/85 backdrop-blur-sm shadow-xl border border-white/10">
