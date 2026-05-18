@@ -3138,6 +3138,103 @@ function MoviesManager() {
         </DialogContent>
       </Dialog>
 
+        {/* YouTube Bulk URL Import Dialog */}
+        <Dialog open={showYtBulkImport} onOpenChange={o => !o && setShowYtBulkImport(false)}>
+          <DialogContent className="bg-card border-border max-w-2xl max-h-[90vh] flex flex-col">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <Youtube className="w-5 h-5 text-red-500" />
+                Importar lista de URLs de YouTube
+              </DialogTitle>
+            </DialogHeader>
+
+            <div className="flex-1 overflow-y-auto space-y-4">
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Pega las URLs (una por línea)</label>
+                <Textarea
+                  placeholder={"https://youtube.com/watch?v=xxx\nhttps://youtu.be/yyy\nhttps://youtube.com/watch?v=zzz"}
+                  value={ytBulkText}
+                  onChange={e => setYtBulkText(e.target.value)}
+                  rows={5}
+                  className="font-mono text-xs"
+                />
+                <p className="text-xs text-muted-foreground">
+                  {ytBulkText.split('\n').filter(l => l.trim()).length} URL(s) detectada(s)
+                </p>
+              </div>
+
+              <Input
+                placeholder="Categoría para todas (opcional)"
+                value={ytBulkCategory}
+                onChange={e => setYtBulkCategory(e.target.value)}
+              />
+
+              <Button
+                onClick={handleYtBulkDetect}
+                disabled={ytBulkDetecting || !ytBulkText.trim()}
+                className="w-full"
+              >
+                {ytBulkDetecting ? <><Loader2 className="w-4 h-4 animate-spin mr-2" />Detectando...</> : 'Detectar videos'}
+              </Button>
+
+              {ytBulkDetected.length > 0 && (
+                <div className="space-y-2">
+                  <p className="text-sm font-medium">
+                    {ytBulkDetected.filter(d => d.status === 'ok').length} válidos ·{' '}
+                    {ytBulkDetected.filter(d => d.status === 'error').length} inválidos
+                  </p>
+                  <div className="space-y-2 max-h-64 overflow-y-auto pr-1">
+                    {ytBulkDetected.map((item, idx) => (
+                      <div
+                        key={idx}
+                        className={`flex items-center gap-3 p-2 rounded-lg border ${item.status === 'error' ? 'border-red-500/30 bg-red-500/5' : 'border-border bg-background'}`}
+                      >
+                        {item.thumbnail ? (
+                          <img src={item.thumbnail} alt="" className="w-16 h-9 object-cover rounded flex-shrink-0 bg-muted" onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+                        ) : (
+                          <div className="w-16 h-9 bg-muted rounded flex-shrink-0 flex items-center justify-center">
+                            <Youtube className="w-4 h-4 text-muted-foreground" />
+                          </div>
+                        )}
+                        <div className="flex-1 min-w-0">
+                          <p className="text-xs font-medium truncate">{item.title}</p>
+                          <p className="text-[10px] text-muted-foreground truncate">{item.url}</p>
+                        </div>
+                        {item.status === 'error' ? (
+                          <XCircle className="w-4 h-4 text-red-500 flex-shrink-0" />
+                        ) : (
+                          <CheckCircle2 className="w-4 h-4 text-green-500 flex-shrink-0" />
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {ytBulkResults && (
+                <div className={`text-sm p-3 rounded-lg border ${ytBulkResults.fail === 0 ? 'border-green-500/30 bg-green-500/10 text-green-400' : 'border-yellow-500/30 bg-yellow-500/10 text-yellow-400'}`}>
+                  {ytBulkResults.ok} importada(s) · {ytBulkResults.fail} fallaron
+                </div>
+              )}
+            </div>
+
+            <DialogFooter className="gap-2 flex-wrap">
+              <Button variant="outline" onClick={() => setShowYtBulkImport(false)}>Cerrar</Button>
+              {ytBulkDetected.filter(d => d.status === 'ok').length > 0 && (
+                <Button
+                  onClick={handleYtBulkImportAll}
+                  disabled={ytBulkImportingAll}
+                  className="bg-red-600 hover:bg-red-700"
+                >
+                  {ytBulkImportingAll
+                    ? <><Loader2 className="w-4 h-4 animate-spin mr-2" />Importando...</>
+                    : `Importar ${ytBulkDetected.filter(d => d.status === 'ok').length} película(s)`}
+                </Button>
+              )}
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
       <Dialog open={showFolderPreview} onOpenChange={o => !o && setShowFolderPreview(false)}>
         <DialogContent className="bg-card border-border max-w-4xl max-h-[90vh] flex flex-col">
           <DialogHeader>
