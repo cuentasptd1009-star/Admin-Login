@@ -416,6 +416,17 @@ export function YouTubePlayerPage({ videoId, title, onBack, isFav, onFavToggle, 
         </div>
       )}
 
+      {/* Persistent fullscreen button — always visible when controls are hidden */}
+      {!ctrlVisible && hasStarted && (
+        <button
+          onClick={e => { e.stopPropagation(); doToggleFullscreen(); }}
+          className="absolute bottom-4 right-4 z-40 p-3 rounded-full bg-black/50 text-white backdrop-blur hover:bg-black/80 transition-all shadow-lg"
+          title={isFullscreen ? 'Salir de pantalla completa' : 'Pantalla completa'}
+        >
+          {isFullscreen ? <Minimize2 className="w-5 h-5" /> : <Maximize2 className="w-5 h-5" />}
+        </button>
+      )}
+
       {/* CUSTOM CONTROLS */}
       <div
         className={`absolute inset-0 z-30 pointer-events-none transition-opacity duration-300 ${ctrlVisible ? 'opacity-100' : 'opacity-0'}`}

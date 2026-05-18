@@ -596,6 +596,19 @@ export default function VodPlayerPage() {
         </div>
       )}
 
+      {/* Persistent fullscreen button — always visible */}
+      {!showControls && (
+        <button
+          onClick={toggleFullscreen}
+          className="absolute bottom-4 right-4 z-20 p-3 rounded-full bg-black/50 text-white backdrop-blur hover:bg-black/80 transition-all shadow-lg"
+          title={isFullscreen ? 'Salir de pantalla completa' : 'Pantalla completa'}
+        >
+          {isFullscreen
+            ? <Minimize className="w-5 h-5" />
+            : <Maximize className="w-5 h-5" />}
+        </button>
+      )}
+
       <div className={`absolute inset-0 flex flex-col justify-between z-10 transition-opacity duration-300 ${showControls ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}>
         <div className="bg-gradient-to-b from-black/80 to-transparent px-4 pt-4 pb-10">
           <div className="flex items-start gap-3">
