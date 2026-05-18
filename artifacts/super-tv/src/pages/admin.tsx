@@ -5146,15 +5146,33 @@ function SeriesManager() {
         <label className="text-xs text-muted-foreground">Descripción</label>
         <Textarea value={form.description || ''} onChange={e => setForm({ ...form, description: e.target.value })} placeholder="Sinopsis de la serie..." className="bg-background h-20" />
       </div>
-      <div className="flex gap-2 items-end">
-        <div className="flex-1 space-y-1">
-          <label className="text-xs text-muted-foreground">URL Poster</label>
-          <Input value={form.poster || ''} onChange={e => setForm({ ...form, poster: e.target.value })} placeholder="https://..." className="bg-background" />
+      <div className="space-y-2">
+        <div className="space-y-1">
+          <label className="text-xs text-muted-foreground">URL YouTube (miniatura automática)</label>
+          <Input
+            placeholder="https://youtube.com/watch?v=... — pega aquí para auto-generar la carátula"
+            className="bg-background"
+            onChange={e => {
+              const videoId = extractYtVideoId(e.target.value);
+              if (videoId) {
+                setForm({ ...form, poster: `https://i.ytimg.com/vi/${videoId}/maxresdefault.jpg` });
+              }
+            }}
+          />
         </div>
-        <Button variant="outline" size="sm" disabled={posterSearching || !form.title} onClick={() => handleSearchPoster(form.title || '')} className="flex-shrink-0">
-          {posterSearching ? <Loader2 className="w-4 h-4 animate-spin" /> : <Search className="w-4 h-4" />}
-          <span className="hidden sm:inline ml-1">TMDB</span>
-        </Button>
+        <div className="flex gap-2 items-end">
+          <div className="flex-1 space-y-1">
+            <label className="text-xs text-muted-foreground">URL Poster</label>
+            <Input value={form.poster || ''} onChange={e => setForm({ ...form, poster: e.target.value })} placeholder="https://..." className="bg-background" />
+          </div>
+          <Button variant="outline" size="sm" disabled={posterSearching || !form.title} onClick={() => handleSearchPoster(form.title || '')} className="flex-shrink-0">
+            {posterSearching ? <Loader2 className="w-4 h-4 animate-spin" /> : <Search className="w-4 h-4" />}
+            <span className="hidden sm:inline ml-1">TMDB</span>
+          </Button>
+        </div>
+        {form.poster && (
+          <img src={form.poster} alt="preview" className="h-24 w-auto rounded-lg object-cover border border-border" onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+        )}
       </div>
       <div className="space-y-1">
         <label className="text-xs text-muted-foreground">URL Banner</label>
