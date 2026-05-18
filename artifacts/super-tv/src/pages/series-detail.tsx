@@ -8,6 +8,24 @@ import { fetchSeriesDetail } from '@/lib/api';
 import type { SeriesDetail, Season, Episode } from '@/lib/api';
 import { getEpisodeProgress, getSeriesProgress, toggleSeriesFavorite, getSeriesFavorites } from '@/lib/user-data';
 import logo from '@assets/imagen_1777670460131.png';
+import { YouTubePlayerPage } from '@/components/YouTubePlayerPage';
+
+function extractYtId(url: string): string | null {
+  const m = url?.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/)([^&\s?#]+)/);
+  return m ? m[1] : null;
+}
+
+type YtEpisodePlayer = {
+  videoId: string;
+  title: string;
+  episodeId: number;
+  seriesId: number;
+  seasonId: number;
+  seasonNumber: number;
+  episodeNumber: number;
+  startFrom?: number;
+  nextEp: { ep: Episode; season: Season } | null;
+};
 
 function fmtDuration(secs: number): string {
   const m = Math.floor(secs / 60);
@@ -41,6 +59,7 @@ export default function SeriesDetail() {
   const [btnIdx, setBtnIdx] = useState(0);
   const [epIdx, setEpIdx] = useState(0);
   const focusedEpRef = useRef<HTMLDivElement | null>(null);
+  const [ytPlayer, setYtPlayer] = useState<YtEpisodePlayer | null>(null);
 
   const { data: session, isError: sessionError } = useGetMe({ query: { queryKey: getGetMeQueryKey(), retry: false } });
 
@@ -93,8 +112,28 @@ export default function SeriesDetail() {
 
   const handlePlayEpisode = (episode: Episode, season: Season, startFrom?: number) => {
     if (isExpired) { setShowExpiredOverlay(true); return; }
+    const url = episode.filePath ?? '';
+    const isYouTube = url.includes('youtube.com/') || url.includes('youtu.be/');
+    if (isYouTube) {
+      const videoId = extractYtId(url);
+      if (videoId) {
+        const nextEp = getNextEpisode(season, episode, series!);
+        setYtPlayer({
+          videoId,
+          title: episode.title,
+          episodeId: episode.id,
+          seriesId: id,
+          seasonId: season.id,
+          seasonNumber: season.seasonNumber,
+          episodeNumber: episode.episodeNumber,
+          startFrom,
+          nextEp: nextEp && extractYtId(nextEp.ep.filePath ?? '') ? nextEp : null,
+        });
+        return;
+      }
+    }
     const p = new URLSearchParams({
-      url: episode.filePath,
+      url,
       title: episode.title,
       type: 'episode',
       episodeId: String(episode.id),
@@ -432,6 +471,29 @@ export default function SeriesDetail() {
           </div>
         )}
       </main>
+
+      {ytPlayer && (
+        <YouTubePlayerPage
+          videoId={ytPlayer.videoId}
+          title={ytPlayer.title}
+          onBack={() => setYtPlayer(null)}
+          episodeId={ytPlayer.episodeId}
+          seriesId={ytPlayer.seriesId}
+          seasonId={ytPlayer.seasonId}
+          seasonNumber={ytPlayer.seasonNumber}
+          episodeNumber={ytPlayer.episodeNumber}
+          startFrom={ytPlayer.startFrom}
+          seriesTitle={series?.title}
+          nextEpisodeId={ytPlayer.nextEp?.ep.id}
+          nextEpisodeTitle={ytPlayer.nextEp?.ep.title}
+          nextEpisodeNumber={ytPlayer.nextEp?.ep.episodeNumber}
+          nextSeasonNumber={ytPlayer.nextEp?.season.seasonNumber}
+          onNextEpisode={ytPlayer.nextEp ? () => {
+            const { ep, season } = ytPlayer.nextEp!;
+            handlePlayEpisode(ep, season);
+          } : undefined}
+        />
+      )}
     </div>
   );
 }

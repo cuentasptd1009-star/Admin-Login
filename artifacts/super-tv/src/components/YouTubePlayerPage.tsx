@@ -47,6 +47,7 @@ export function YouTubePlayerPage({ videoId, title, onBack, isFav, onFavToggle, 
   const [hasStarted, setHasStarted] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
   const [ytEnded, setYtEnded] = useState(false);
+  const [ytError, setYtError] = useState<string | null>(null);
   const [endBtnIndex, setEndBtnIndex] = useState(0);
   const [ctrlVisible, setCtrlVisible] = useState(true);
   const [isNativeFullscreen, setIsNativeFullscreen] = useState(false);
@@ -132,6 +133,18 @@ export function YouTubePlayerPage({ videoId, title, onBack, isFav, onFavToggle, 
               // Mobile browsers block autoplay without a direct user gesture.
               // The user must tap the pre-play overlay (startPlayback) to begin.
             }
+          },
+          onError: (e: any) => {
+            if (destroyed) return;
+            const code = e.data;
+            if (code === 101 || code === 150) {
+              setYtError('Este video no está disponible en tu país o el autor no permite reproducirlo externamente.');
+            } else if (code === 100) {
+              setYtError('Este video no existe o fue eliminado de YouTube.');
+            } else {
+              setYtError('No se pudo reproducir el video de YouTube (error ' + code + ').');
+            }
+            setHasStarted(true);
           },
           onStateChange: (e: any) => {
             if (destroyed) return;
@@ -357,6 +370,27 @@ export function YouTubePlayerPage({ videoId, title, onBack, isFav, onFavToggle, 
           <div className="w-20 h-20 rounded-full bg-red-600 flex items-center justify-center shadow-2xl">
             <Play className="w-9 h-9 text-white fill-white ml-1" />
           </div>
+        </div>
+      )}
+
+      {/* ERROR OVERLAY */}
+      {ytError && (
+        <div className="absolute inset-0 z-40 bg-black/95 flex flex-col items-center justify-center gap-6 px-8">
+          <img src={logo} alt="Super TV" className="w-40 h-auto opacity-70 mb-2" />
+          <div className="w-16 h-16 rounded-full bg-red-900/60 border border-red-500/40 flex items-center justify-center">
+            <span className="text-red-400 text-3xl font-bold">!</span>
+          </div>
+          <div className="text-center space-y-2 max-w-sm">
+            <p className="text-white font-semibold text-lg">Video no disponible</p>
+            <p className="text-white/60 text-sm leading-relaxed">{ytError}</p>
+          </div>
+          <button
+            onClick={onBack}
+            className="mt-2 flex items-center gap-2 px-5 py-2.5 rounded-xl bg-white/10 hover:bg-white/20 border border-white/15 text-white text-sm font-medium transition-all active:scale-95"
+          >
+            <ArrowLeft className="w-4 h-4" />
+            Volver
+          </button>
         </div>
       )}
 
