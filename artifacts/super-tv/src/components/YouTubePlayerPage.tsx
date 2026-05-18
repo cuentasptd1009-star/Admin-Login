@@ -573,14 +573,10 @@ export function YouTubePlayerPage({ videoId, title, onBack, isFav, onFavToggle, 
         </div>
       </div>
 
-      {/* Next episode overlay — always visible when next episode exists */}
-      {onNextEpisode && nextEpisodeId && (
+      {/* Next episode overlay — only visible in the last 30 seconds */}
+      {onNextEpisode && nextEpisodeId && showNextEp && (
         <div
-          className={`absolute bottom-28 right-4 z-40 backdrop-blur rounded-xl px-4 py-3 flex items-center gap-3 shadow-2xl transition-all duration-300 ${
-            showNextEp
-              ? 'bg-black/90 border border-white/30 animate-pulse'
-              : 'bg-black/55 border border-white/10'
-          }`}
+          className="absolute bottom-28 right-4 z-40 backdrop-blur rounded-xl px-4 py-3 flex items-center gap-3 shadow-2xl transition-all duration-300 bg-black/90 border border-white/30 animate-pulse"
           onClick={e => e.stopPropagation()}
         >
           <div className="text-sm text-white leading-snug">
