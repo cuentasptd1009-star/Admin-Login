@@ -178,56 +178,86 @@ function cleanIdentifier(id: string): string {
   return id.replace(/^\/+/, "").trim();
 }
 
-async function youtubeInternalSearch(q: string, maxResults = 20): Promise<any[]> {
-  const INNERTUBE_KEY = "AIzaSyAO_FJ2SlqU8Q4STEHLGCilw_Y9_11qcW8";
-  const body = {
-    context: {
-      client: {
-        clientName: "WEB",
-        clientVersion: "2.20240101",
-        hl: "es",
-        gl: "US",
-      },
-    },
-    query: q,
-    params: "EgIQAQ%3D%3D", // filter: videos only
-  };
-  const res = await fetch(
-    `https://www.youtube.com/youtubei/v1/search?key=${INNERTUBE_KEY}&prettyPrint=false`,
-    {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "User-Agent": "Mozilla/5.0" },
-      body: JSON.stringify(body),
-      signal: AbortSignal.timeout(10000),
-    }
-  );
-  if (!res.ok) return [];
-  const data = await res.json();
+const INNERTUBE_KEY = "AIzaSyAO_FJ2SlqU8Q4STEHLGCilw_Y9_11qcW8";
+const INNERTUBE_CONTEXT = {
+  client: { clientName: "WEB", clientVersion: "2.20240101", hl: "es", gl: "US" },
+};
 
-  // Walk the renderer tree to extract video items
+function extractVideosAndToken(data: any): { videos: any[]; continuationToken: string | null } {
   const contents: any[] =
     data?.contents?.twoColumnSearchResultsRenderer?.primaryContents
-      ?.sectionListRenderer?.contents ?? [];
+      ?.sectionListRenderer?.contents ??
+    data?.onResponseReceivedCommands?.[0]?.appendContinuationItemsAction?.continuationItems ??
+    [];
 
   const videos: any[] = [];
+  let continuationToken: string | null = null;
+
   for (const section of contents) {
-    const items: any[] =
-      section?.itemSectionRenderer?.contents ?? [];
+    const items: any[] = section?.itemSectionRenderer?.contents ?? [];
     for (const item of items) {
       const vr = item?.videoRenderer;
       if (!vr || !vr.videoId) continue;
       const videoId: string = vr.videoId;
       const title: string = vr.title?.runs?.[0]?.text ?? "";
       const channel: string = vr.ownerText?.runs?.[0]?.text ?? "";
-      const thumb: string =
-        vr.thumbnail?.thumbnails?.slice(-1)[0]?.url?.split("?")[0] ?? "";
+      const thumb: string = vr.thumbnail?.thumbnails?.slice(-1)[0]?.url?.split("?")[0] ?? "";
       const durText: string = vr.lengthText?.simpleText ?? "";
       videos.push({ videoId, title, thumbnail: thumb, channel, duration: durText });
-      if (videos.length >= maxResults) break;
     }
-    if (videos.length >= maxResults) break;
+    // Grab continuation token from continuationItemRenderer
+    const contItem = section?.continuationItemRenderer;
+    if (contItem) {
+      continuationToken =
+        contItem?.continuationEndpoint?.continuationCommand?.token ??
+        contItem?.button?.buttonRenderer?.command?.continuationCommand?.token ??
+        null;
+    }
   }
-  return videos;
+  return { videos, continuationToken };
+}
+
+async function youtubeInternalSearch(q: string, maxResults = 50): Promise<any[]> {
+  // First page
+  const firstRes = await fetch(
+    `https://www.youtube.com/youtubei/v1/search?key=${INNERTUBE_KEY}&prettyPrint=false`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "User-Agent": "Mozilla/5.0" },
+      body: JSON.stringify({ context: INNERTUBE_CONTEXT, query: q, params: "EgIQAQ%3D%3D" }),
+      signal: AbortSignal.timeout(10000),
+    }
+  );
+  if (!firstRes.ok) return [];
+  const firstData = await firstRes.json();
+  const { videos, continuationToken } = extractVideosAndToken(firstData);
+
+  // Fetch additional pages until we have enough or no more tokens
+  let token = continuationToken;
+  let page = 1;
+  while (videos.length < maxResults && token && page < 4) {
+    try {
+      const contRes = await fetch(
+        `https://www.youtube.com/youtubei/v1/search?key=${INNERTUBE_KEY}&prettyPrint=false`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "User-Agent": "Mozilla/5.0" },
+          body: JSON.stringify({ context: INNERTUBE_CONTEXT, continuation: token }),
+          signal: AbortSignal.timeout(8000),
+        }
+      );
+      if (!contRes.ok) break;
+      const contData = await contRes.json();
+      const { videos: moreVideos, continuationToken: nextToken } = extractVideosAndToken(contData);
+      videos.push(...moreVideos);
+      token = nextToken;
+      page++;
+    } catch {
+      break;
+    }
+  }
+
+  return videos.slice(0, maxResults);
 }
 
 router.get("/user-search/youtube", requireUserAuth, async (req: Request, res: Response) => {
@@ -240,7 +270,7 @@ router.get("/user-search/youtube", requireUserAuth, async (req: Request, res: Re
     const smartQ = buildYouTubeQuery(q, contentType);
 
     // Fetch more results than needed so we have enough after filtering
-    const raw = await youtubeInternalSearch(smartQ, 30);
+    const raw = await youtubeInternalSearch(smartQ, 50);
     if (raw.length === 0) return res.json({ items: [] });
 
     // For movies: filter to only real full-length films (60+ min, no junk titles)
@@ -248,7 +278,7 @@ router.get("/user-search/youtube", requireUserAuth, async (req: Request, res: Re
       ? raw.filter(v => isLikelyFullMovie(v.title, v.duration))
       : raw;
 
-    const items = filtered.slice(0, 10).map((v) => ({
+    const items = filtered.slice(0, 50).map((v) => ({
       videoId: v.videoId,
       title: sanitizeText(v.title, 200),
       thumbnail: v.thumbnail,
@@ -271,7 +301,7 @@ router.get("/admin/youtube-search", requireAnyAuth, async (req: Request, res: Re
 
     // Admin search: use the query exactly as typed (no "full movie" appended)
     // so admin can find specific titles to import
-    const raw = await youtubeInternalSearch(q, 20);
+    const raw = await youtubeInternalSearch(q, 50);
     if (raw.length === 0) return res.json({ items: [] });
 
     const items = raw.map((v) => ({
