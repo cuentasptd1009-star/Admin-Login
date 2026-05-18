@@ -2537,7 +2537,7 @@ function MoviesManager() {
       if (!videoId) { detected.push({ url, videoId: '', title: url, thumbnail: '', status: 'error' }); continue; }
       try {
         const token = getToken('admin');
-        const r = await fetch(`${BASE_URL}/api/youtube/url-info?url=${encodeURIComponent(url)}`, {
+        const r = await fetch(`${BASE_URL}/api/youtube/video-info?url=${encodeURIComponent(url)}`, {
           headers: { Authorization: `Bearer ${token}` },
         });
         if (r.ok) {
