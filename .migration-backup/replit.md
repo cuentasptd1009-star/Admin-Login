@@ -1,57 +1,63 @@
 # Super TV
 
-A streaming platform app ("Tu Streaming de Confianza") with access-code-based authentication, live channels, movies, series, admin panels, and TV remote keyboard navigation support.
+Una plataforma de streaming IPTV y VOD con panel de administración, soporte para películas, series y canales en vivo.
 
 ## Run & Operate
 
-- `pnpm --filter @workspace/api-server run dev` — run the API server (port 8080)
+- `pnpm --filter @workspace/api-server run dev` — run the API server (port 3001)
+- `pnpm --filter @workspace/super-tv run dev` — run the frontend (port 19603)
 - `pnpm run typecheck` — full typecheck across all packages
-- `pnpm --filter @workspace/api-spec run codegen` — regenerate API hooks and Zod schemas from the OpenAPI spec (note: typecheck:libs step will show collision warnings from the OpenAPI naming scheme; the runtime is unaffected)
+- `pnpm run build` — typecheck + build all packages
+- `pnpm --filter @workspace/api-spec run codegen` — regenerate API hooks and Zod schemas from the OpenAPI spec
 - `pnpm --filter @workspace/db run push` — push DB schema changes (dev only)
-- Required env: `DATABASE_URL` — Postgres connection string
+- Required env: `DATABASE_URL` — Postgres connection string (auto-provided by Replit)
 
 ## Stack
 
 - pnpm workspaces, Node.js 24, TypeScript 5.9
-- Frontend: React + Vite (`artifacts/super-tv/`) with wouter routing
-- API: Express 5 (`artifacts/api-server/`)
-- DB: PostgreSQL + Drizzle ORM (`lib/db/`)
-- Validation: Zod, `drizzle-zod`
-- API codegen: Orval (from OpenAPI spec in `lib/api-spec/openapi.yaml`)
-- Build: esbuild for server, Vite for frontend
-- Media: HLS.js, FLV.js, Dash.js for streaming playback
+- API: Express 5 (port 3001)
+- Frontend: React 19 + Vite (port 19603, proxied to external port 3000)
+- DB: PostgreSQL + Drizzle ORM
+- Validation: Zod (`zod/v4`), `drizzle-zod`
+- API codegen: Orval (from OpenAPI spec)
+- Build: esbuild (CJS bundle)
+- Video: hls.js, dash.js, flv.js
 
 ## Where things live
 
-- `artifacts/super-tv/src/pages/` — page components (login, home, player, admin, subadmin, movie-detail, series-detail)
-- `artifacts/super-tv/src/components/` — UI components (HeroBanner, ContentRow, ContentCard, MiniPlayer, TvKeyboard, etc.)
-- `artifacts/super-tv/src/hooks/` — custom hooks (TV keyboard nav, voice search, PWA install)
-- `artifacts/api-server/src/routes/` — Express API routes
-- `lib/api-spec/openapi.yaml` — OpenAPI spec (source of truth for API contracts)
-- `lib/db/src/schema/supertv.ts` — Drizzle database schema
-- `lib/db/migrations/` — SQL migration files
-- `attached_assets/` — brand images and app assets
+- `lib/db/src/schema/schema/supertv.ts` — DB schema (source of truth)
+- `lib/api-spec/openapi.yaml` — API contract
+- `artifacts/api-server/src/routes/` — all API routes
+- `artifacts/super-tv/src/pages/admin.tsx` — full admin panel (3700+ lines)
+- `artifacts/api-server/src/routes/smartImport.ts` — unified smart link importer
+- `artifacts/api-server/src/routes/terabox.ts` — Terabox-specific importer
 
 ## Architecture decisions
 
-- Access-code based auth (no username/password for end users) — codes expire and have device limits
-- Admin/Subadmin role hierarchy — admins manage subadmins who distribute codes
-- In-memory LRU cache for auth token lookups to reduce DB load
-- Service Worker + PWA manifest for installable web app experience
-- TV-first keyboard navigation with custom hook for remote control support
+- Custom token-based auth (opaque 32-byte hex tokens, stored in DB). No JWT or external auth provider.
+- Two auth systems: access codes for users, username+password for admin/subadmins.
+- Tokens stored in localStorage; injected into API calls via Authorization header.
+- Cloudinary used for image storage (thumbnails, posters); credentials via Replit Secrets.
+- Smart import system auto-detects link type (Terabox vs HTTP directory) and folder structure (movies vs series vs multi-series).
 
 ## Product
 
-Super TV is a streaming service where users authenticate with access codes. They can browse live channels, movies, and series. Admins manage the content library, access codes, subadmins, and packages. Subadmins sell access codes to end users. Supports HLS/FLV/DASH streaming protocols.
+- **Super TV** — streaming platform where users log in with access codes and watch live channels, movies, and series.
+- **Admin panel** (`/admin`) — full content management: codes, channels, movies, series, subadmins, packages, avatars, settings.
+- **Subadmin panel** (`/subadmin`) — limited panel for resellers to manage codes.
+- **Smart Import** — paste any link (Terabox, HTTP directory) → auto-reads folder structure → imports movies/series organized by folders.
 
 ## User preferences
 
-_Populate as you build — explicit user instructions worth remembering across sessions._
+- Admin username: `admin@admin`, password set via `ADMIN_PASSWORD` env var. If the secret is not set, the default fallback password is `admin` — change it via the admin settings panel after first login.
+- All channels and access codes must be preserved when making changes.
 
 ## Gotchas
 
-- After running `pnpm --filter @workspace/api-spec run codegen`, the `lib/api-zod/src/index.ts` barrel will be regenerated with `export * from "./generated/types"` which causes TS2308 collisions. This is a known issue with the OpenAPI spec using `*Body` component names. The fix is to remove that line after codegen. The runtime (esbuild) is unaffected.
-- `vercel.json` is kept for reference but the app runs on Replit via the workflow system, not Vercel.
+- API server runs on port 3001 (not 5000), proxied through Vite at `/api`.
+- Frontend runs on port 19603, exposed externally on port 3000.
+- Always run `pnpm install` before starting if node_modules are missing.
+- `pnpm --filter db push` runs automatically in `scripts/post-merge.sh` after merges.
 
 ## Pointers
 

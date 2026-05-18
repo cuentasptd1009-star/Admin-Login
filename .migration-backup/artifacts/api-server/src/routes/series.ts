@@ -54,7 +54,8 @@ router.get("/series/all", requireAdminAuth, async (req: Request, res: Response) 
 router.get("/series/poster-search", requireAdminAuth, async (req: Request, res: Response) => {
   const title = (req.query.q as string || '').trim();
   if (!title) { res.json({ poster: null, banner: null, title: null, year: null, genre: null, description: null }); return; }
-  const tmdbKey = process.env.TMDB_API_KEY;
+  const { getTmdbApiKey } = await import("./settings.js");
+  const tmdbKey = await getTmdbApiKey();
   if (tmdbKey) {
     try {
       const url = `https://api.themoviedb.org/3/search/tv?api_key=${tmdbKey}&query=${encodeURIComponent(title)}&language=es-ES`;
@@ -166,17 +167,19 @@ router.post("/series/reorder", requireAdminAuth, async (req: Request, res: Respo
 });
 
 router.get("/series/:id/poster-search", requireAdminAuth, async (req: Request, res: Response) => {
+
   const title = (req.query.q as string || '').trim();
   if (!title) { res.json({ poster: null, banner: null, title: null, year: null, genre: null, description: null }); return; }
-  const tmdbKey = process.env.TMDB_API_KEY;
-  if (tmdbKey) {
+  const { getTmdbApiKey } = await import("./settings.js");
+  const tmdbKey2 = await getTmdbApiKey();
+  if (tmdbKey2) {
     try {
-      const url = `https://api.themoviedb.org/3/search/tv?api_key=${tmdbKey}&query=${encodeURIComponent(title)}&language=es-ES`;
+      const url = `https://api.themoviedb.org/3/search/tv?api_key=${tmdbKey2}&query=${encodeURIComponent(title)}&language=es-ES`;
       const r = await fetch(url, { signal: AbortSignal.timeout(6000) });
       const data = await r.json() as any;
       if (data.results?.[0]) {
         const s = data.results[0];
-        const detail = s.id ? await (await fetch(`https://api.themoviedb.org/3/tv/${s.id}?api_key=${tmdbKey}&language=es-ES`, { signal: AbortSignal.timeout(6000) })).json() as any : null;
+        const detail = s.id ? await (await fetch(`https://api.themoviedb.org/3/tv/${s.id}?api_key=${tmdbKey2}&language=es-ES`, { signal: AbortSignal.timeout(6000) })).json() as any : null;
         res.json({
           poster: s.poster_path ? `https://image.tmdb.org/t/p/w500${s.poster_path}` : null,
           banner: s.backdrop_path ? `https://image.tmdb.org/t/p/original${s.backdrop_path}` : null,
@@ -309,13 +312,23 @@ router.delete("/seasons/:id", requireAdminAuth, async (req: Request, res: Respon
 });
 
 router.post("/episodes", requireAdminAuth, async (req: Request, res: Response) => {
-  const { seriesId, seasonId, episodeNumber, title, description, filePath, thumbnail, duration } = req.body;
+  const { seriesId, seasonId, episodeNumber, title, description, filePath, duration } = req.body;
   if (!seriesId || !seasonId || !title || !filePath) { res.status(400).json({ error: "Missing required fields" }); return; }
   const existing = await db.select({ count: episodesTable.id }).from(episodesTable).where(eq(episodesTable.seasonId, Number(seasonId)));
+  const videoFormat = req.body.videoFormat ?? null;
+
+  // Auto-use series poster as thumbnail for YouTube episodes when no thumbnail is provided
+  let thumbnail = req.body.thumbnail || null;
+  const isYoutube = /youtube\.com|youtu\.be/i.test(String(filePath));
+  if (!thumbnail && isYoutube) {
+    const [series] = await db.select({ poster: seriesTable.poster }).from(seriesTable).where(eq(seriesTable.id, Number(seriesId))).limit(1);
+    if (series?.poster) thumbnail = series.poster;
+  }
+
   const [created] = await db.insert(episodesTable).values({
     seriesId: Number(seriesId), seasonId: Number(seasonId),
     episodeNumber: episodeNumber ? Number(episodeNumber) : existing.length + 1,
-    title, description, filePath, thumbnail,
+    title, description, filePath, videoFormat, thumbnail,
     duration: duration ? Number(duration) : undefined,
     order: existing.length,
   }).returning();
@@ -326,7 +339,7 @@ router.post("/episodes", requireAdminAuth, async (req: Request, res: Response) =
 router.put("/episodes/:id", requireAdminAuth, async (req: Request, res: Response) => {
   const id = Number(req.params.id);
   const patch: Record<string, unknown> = {};
-  const fields = ['episodeNumber', 'title', 'description', 'filePath', 'thumbnail', 'duration', 'order'] as const;
+  const fields = ['episodeNumber', 'title', 'description', 'filePath', 'videoFormat', 'thumbnail', 'duration', 'order'] as const;
   for (const f of fields) {
     if (req.body[f] !== undefined) patch[f === 'episodeNumber' ? 'episodeNumber' : f] = req.body[f];
   }

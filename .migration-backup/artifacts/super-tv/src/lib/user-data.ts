@@ -174,3 +174,98 @@ export function toggleSeriesFavorite(seriesId: number): boolean {
     return false;
   }
 }
+
+// ── External content (YouTube / Archive) ────────────────────────────────────
+
+export interface ExternalItem {
+  id: string;
+  source: 'youtube' | 'archive';
+  title: string;
+  thumbnail: string;
+  videoId?: string;
+  url?: string;
+  updatedAt: number;
+}
+
+export function getExternalFavorites(): ExternalItem[] {
+  try {
+    const raw = localStorage.getItem(`${P}ext_favorites`);
+    return raw ? (JSON.parse(raw) as ExternalItem[]) : [];
+  } catch { return []; }
+}
+
+export function isExternalFavorite(id: string): boolean {
+  return getExternalFavorites().some(f => f.id === id);
+}
+
+export function toggleExternalFavorite(item: ExternalItem): boolean {
+  const favs = getExternalFavorites();
+  const idx = favs.findIndex(f => f.id === item.id);
+  if (idx === -1) {
+    favs.unshift({ ...item, updatedAt: Date.now() });
+    try { localStorage.setItem(`${P}ext_favorites`, JSON.stringify(favs.slice(0, 100))); } catch {}
+    return true;
+  } else {
+    favs.splice(idx, 1);
+    try { localStorage.setItem(`${P}ext_favorites`, JSON.stringify(favs)); } catch {}
+    return false;
+  }
+}
+
+export function getExternalHistory(): ExternalItem[] {
+  try {
+    const raw = localStorage.getItem(`${P}ext_history`);
+    return raw ? (JSON.parse(raw) as ExternalItem[]) : [];
+  } catch { return []; }
+}
+
+export function addExternalHistory(item: ExternalItem): void {
+  try {
+    const history = getExternalHistory().filter(h => h.id !== item.id);
+    history.unshift({ ...item, updatedAt: Date.now() });
+    localStorage.setItem(`${P}ext_history`, JSON.stringify(history.slice(0, 50)));
+  } catch {}
+}
+
+export function removeExternalHistory(id: string): void {
+  try {
+    const history = getExternalHistory().filter(h => h.id !== id);
+    localStorage.setItem(`${P}ext_history`, JSON.stringify(history));
+  } catch {}
+}
+
+export function clearExternalHistory(): void {
+  try {
+    localStorage.removeItem(`${P}ext_history`);
+  } catch {}
+}
+
+// ── Search history ────────────────────────────────────────────────────────────
+
+export function getSearchHistory(): string[] {
+  try {
+    const raw = localStorage.getItem(`${P}search_history`);
+    return raw ? (JSON.parse(raw) as string[]) : [];
+  } catch { return []; }
+}
+
+export function addSearchHistory(query: string): void {
+  try {
+    const q = query.trim();
+    if (!q || q.length < 2) return;
+    const history = getSearchHistory().filter(h => h.toLowerCase() !== q.toLowerCase());
+    history.unshift(q);
+    localStorage.setItem(`${P}search_history`, JSON.stringify(history.slice(0, 10)));
+  } catch {}
+}
+
+export function removeSearchHistory(query: string): void {
+  try {
+    const history = getSearchHistory().filter(h => h !== query);
+    localStorage.setItem(`${P}search_history`, JSON.stringify(history));
+  } catch {}
+}
+
+export function clearSearchHistory(): void {
+  try { localStorage.removeItem(`${P}search_history`); } catch {}
+}

@@ -1,9 +1,7 @@
 import { Router, type Request, type Response } from "express";
-import { Readable } from "node:stream";
 import { db } from "@workspace/db";
 import { channelsTable, settingsTable } from "@workspace/db";
 import { eq, asc, ilike, or, sql, inArray } from "drizzle-orm";
-import { URL as NodeURL } from "url";
 import { cache, TTL } from "../lib/cache.js";
 import { channelTracker } from "../lib/tracker.js";
 import {
@@ -47,6 +45,7 @@ function isSafeRelayUrl(url: string): boolean {
 }
 
 function detectStreamFormat(url: string): string {
+  if (url.includes("youtube.com/") || url.includes("youtu.be/")) return "youtube";
   const clean = url.toLowerCase().split("?")[0].split("#")[0];
   if (clean.endsWith(".m3u8") || clean.includes("/hls/")) return "hls";
   if (clean.endsWith(".mpd") || clean.includes("/dash/")) return "dash";
@@ -54,27 +53,6 @@ function detectStreamFormat(url: string): string {
   return "native";
 }
 
-function resolveUrl(base: string, relative: string): string {
-  if (relative.startsWith("http://") || relative.startsWith("https://")) return relative;
-  try {
-    const baseUrl = new NodeURL(base);
-    if (relative.startsWith("/")) return `${baseUrl.protocol}//${baseUrl.host}${relative}`;
-    const dir = base.substring(0, base.lastIndexOf("/") + 1);
-    return `${dir}${relative}`;
-  } catch {
-    return relative;
-  }
-}
-
-function rewriteM3U8(content: string, baseUrl: string, channelId: number, token: string): string {
-  return content.split("\n").map((line) => {
-    const t = line.trim();
-    if (t === "" || t.startsWith("#")) return line;
-    const abs = resolveUrl(baseUrl, t);
-    const s = Buffer.from(abs).toString("base64url");
-    return `/api/channels/${channelId}/hls-relay?s=${s}&token=${encodeURIComponent(token)}`;
-  }).join("\n");
-}
 
 async function checkHlsAuth(req: Request, res: Response): Promise<{ ok: boolean; token?: string }> {
   const token = (req.query.token as string) || extractToken(req);
@@ -98,8 +76,16 @@ async function checkHlsAuth(req: Request, res: Response): Promise<{ ok: boolean;
 
 const router = Router();
 
+const URL_PROTOCOLS = ["http://", "https://", "rtmp://", "rtmps://", "rtsp://", "udp://", "rtp://", "vlc://"];
+
+function looksLikeUrl(line: string): boolean {
+  return URL_PROTOCOLS.some((p) => line.startsWith(p));
+}
+
 function parseM3U(content: string) {
-  const lines = content.split("\n").map((l) => l.trim());
+  // Strip BOM if present
+  const cleaned = content.replace(/^\uFEFF/, "");
+  const lines = cleaned.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
   const channels: { name: string; logo?: string; category?: string; streamUrl: string }[] = [];
   let currentName = "";
   let currentLogo = "";
@@ -113,18 +99,15 @@ function parseM3U(content: string) {
       currentName = nameMatch ? nameMatch[1].trim() : "Canal";
       currentLogo = logoMatch ? logoMatch[1] : "";
       currentCategory = groupMatch ? groupMatch[1] : "";
-    } else if (
-      line.startsWith("http://") ||
-      line.startsWith("https://") ||
-      line.startsWith("rtmp://") ||
-      line.startsWith("rtsp://")
-    ) {
+    } else if (looksLikeUrl(line)) {
       if (!currentName) currentName = "Canal";
+      // Strip any trailing comment or whitespace from URL
+      const streamUrl = line.split(/\s+#/)[0].trim();
       channels.push({
         name: currentName,
         logo: currentLogo || undefined,
         category: currentCategory || undefined,
-        streamUrl: line,
+        streamUrl,
       });
       currentName = "";
       currentLogo = "";
@@ -185,12 +168,15 @@ router.get("/channels", async (req: Request, res: Response) => {
   }
 
   const channels = await query.orderBy(asc(channelsTable.order));
-  const result = channels.map((c) => ({
-    ...c,
-    createdAt: c.createdAt.toISOString(),
-    streamUrl: isAdmin ? c.streamUrl : null,
-    streamFormat: detectStreamFormat(c.streamUrl),
-  }));
+  const result = channels.map((c) => {
+    const streamFormat = detectStreamFormat(c.streamUrl);
+    return {
+      ...c,
+      createdAt: c.createdAt.toISOString(),
+      streamUrl: isAdmin || streamFormat === "youtube" ? c.streamUrl : null,
+      streamFormat,
+    };
+  });
 
   cache.set(cacheKey, result, TTL.MEDIUM);
   res.setHeader("Cache-Control", "private, max-age=30, stale-while-revalidate=60");
@@ -333,10 +319,32 @@ router.post("/channels/reorder", requireAdminAuth, async (req: Request, res: Res
   res.json({ success: true });
 });
 
+function rewriteM3u8(
+  text: string,
+  baseUrl: URL,
+  channelId: string,
+  token: string,
+): string {
+  return text
+    .split("\n")
+    .map((line) => {
+      const trimmed = line.trim();
+      if (trimmed === "" || trimmed.startsWith("#")) return line;
+      let absolute: string;
+      try {
+        absolute = new URL(trimmed, baseUrl).toString();
+      } catch {
+        return line;
+      }
+      const encoded = Buffer.from(absolute).toString("base64url");
+      return `/api/channels/${channelId}/hls-relay?s=${encoded}&token=${encodeURIComponent(token)}`;
+    })
+    .join("\n");
+}
+
 router.get("/channels/:id/hls-proxy", async (req: Request, res: Response) => {
   const auth = await checkHlsAuth(req, res);
   if (!auth.ok) return;
-  const token = auth.token!;
 
   const parsed = GetChannelParams.safeParse(req.params);
   if (!parsed.success) { res.status(400).json({ error: "Invalid id" }); return; }
@@ -347,37 +355,28 @@ router.get("/channels/:id/hls-proxy", async (req: Request, res: Response) => {
   channelTracker.record(channel.id, channel.name);
 
   try {
-    const response = await fetch(channel.streamUrl, {
-      headers: { "User-Agent": "Mozilla/5.0 SuperTV/1.0" },
-      signal: AbortSignal.timeout(7000),
+    const upstream = await fetch(channel.streamUrl, {
+      headers: { "User-Agent": "Mozilla/5.0 (compatible; SuperTV/1.0)", Accept: "*/*" },
+      signal: AbortSignal.timeout(8000),
     });
-    if (!response.ok) { res.status(502).send("Stream unavailable"); return; }
+    if (!upstream.ok) { res.status(502).send("Stream unavailable"); return; }
 
-    const ct = response.headers.get("content-type") || "";
-    const isPlaylist = ct.includes("mpegurl") || channel.streamUrl.toLowerCase().includes(".m3u8");
+    const text = await upstream.text();
+    const baseUrl = new URL(channel.streamUrl);
+    const rewritten = rewriteM3u8(text, baseUrl, String(parsed.data.id), auth.token || "");
 
-    if (isPlaylist) {
-      const text = await response.text();
-      const rewritten = rewriteM3U8(text, channel.streamUrl, channel.id, token);
-      res.setHeader("Content-Type", "application/vnd.apple.mpegurl");
-      res.setHeader("Cache-Control", "no-cache, no-store");
-      res.setHeader("Access-Control-Allow-Origin", "*");
-      res.send(rewritten);
-    } else {
-      res.setHeader("Content-Type", ct || "application/octet-stream");
-      res.setHeader("Access-Control-Allow-Origin", "*");
-      const buf = Buffer.from(await response.arrayBuffer());
-      res.send(buf);
-    }
+    res.setHeader("Content-Type", "application/vnd.apple.mpegurl");
+    res.setHeader("Cache-Control", "no-cache");
+    res.setHeader("Access-Control-Allow-Origin", "*");
+    res.send(rewritten);
   } catch {
-    res.status(502).send("Stream unavailable");
+    res.status(502).send("Failed to fetch stream");
   }
 });
 
 router.get("/channels/:id/hls-relay", async (req: Request, res: Response) => {
   const auth = await checkHlsAuth(req, res);
   if (!auth.ok) return;
-  const token = auth.token!;
 
   const parsed = GetChannelParams.safeParse(req.params);
   if (!parsed.success) { res.status(400).send("Invalid id"); return; }
@@ -399,34 +398,34 @@ router.get("/channels/:id/hls-relay", async (req: Request, res: Response) => {
   }
 
   try {
-    const response = await fetch(segUrl, {
-      headers: { "User-Agent": "Mozilla/5.0 SuperTV/1.0" },
-      signal: AbortSignal.timeout(7000),
+    const upstream = await fetch(segUrl, {
+      headers: { "User-Agent": "Mozilla/5.0 (compatible; SuperTV/1.0)", Accept: "*/*" },
+      signal: AbortSignal.timeout(15000),
     });
-    if (!response.ok) { res.status(502).send("Segment unavailable"); return; }
+    if (!upstream.ok) { res.status(502).send("Segment unavailable"); return; }
 
-    const ct = response.headers.get("content-type") || "";
-    const isPlaylist = ct.includes("mpegurl") || segUrl.toLowerCase().includes(".m3u8");
+    const contentType = upstream.headers.get("content-type") || "";
+    const urlClean = segUrl.toLowerCase().split("?")[0];
+    const isManifest = contentType.includes("mpegurl") || urlClean.endsWith(".m3u8");
 
-    if (isPlaylist) {
-      const text = await response.text();
-      const rewritten = rewriteM3U8(text, segUrl, parsed.data.id, token);
+    if (isManifest) {
+      const text = await upstream.text();
+      const baseUrl = new URL(segUrl);
+      const token = (req.query.token as string) || "";
+      const rewritten = rewriteM3u8(text, baseUrl, String(parsed.data.id), token);
       res.setHeader("Content-Type", "application/vnd.apple.mpegurl");
-      res.setHeader("Cache-Control", "no-cache, no-store");
+      res.setHeader("Cache-Control", "no-cache");
       res.setHeader("Access-Control-Allow-Origin", "*");
       res.send(rewritten);
     } else {
-      res.setHeader("Content-Type", ct || "video/MP2T");
+      const buffer = await upstream.arrayBuffer();
+      res.setHeader("Content-Type", contentType || "video/MP2T");
+      res.setHeader("Cache-Control", "no-cache");
       res.setHeader("Access-Control-Allow-Origin", "*");
-      const cl = response.headers.get("content-length");
-      if (cl) res.setHeader("Content-Length", cl);
-      if (!response.body) { res.status(502).send("Empty response"); return; }
-      const readable = Readable.fromWeb(response.body as import("stream/web").ReadableStream);
-      readable.pipe(res);
-      res.on("close", () => readable.destroy());
+      res.send(Buffer.from(buffer));
     }
   } catch {
-    res.status(502).send("Segment unavailable");
+    res.status(502).send("Failed to fetch segment");
   }
 });
 

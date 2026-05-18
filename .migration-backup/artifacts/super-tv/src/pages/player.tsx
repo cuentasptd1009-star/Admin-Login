@@ -1,22 +1,36 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useLocation } from 'wouter';
 import { Play, Pause, Volume2, VolumeX, Maximize, Minimize, ArrowLeft, RotateCcw, SkipBack, SkipForward, AlertTriangle, Lock, Minimize2, ChevronLeft, ChevronRight } from 'lucide-react';
+import { YouTubePlayerPage } from '@/components/YouTubePlayerPage';
 import logo from '@assets/imagen_1777670460131.png';
 import { useGetMe, getGetMeQueryKey } from '@workspace/api-client-react';
 import { getProgress, saveProgress, addToHistory, saveEpisodeProgress, getEpisodeProgress } from '@/lib/user-data';
 import { getMiniPlayerState, setMiniPlayerState, updateMiniPlayerState } from '@/lib/mini-player-state';
 import { getToken } from '@/lib/auth';
+import { normalizeKey } from '@/lib/tv-remote';
 
-type VideoFormat = 'hls' | 'dash' | 'flv' | 'native';
+type VideoFormat = 'hls' | 'dash' | 'flv' | 'native' | 'youtube';
 
-// Preload hls.js as soon as this module loads so it's cached when first needed
+function extractYouTubeId(url: string): string | null {
+  const m = url.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/)([^&\s?#]+)/);
+  return m ? m[1] : null;
+}
+
+// Preload hls.js eagerly using idle time so it's ready before the user needs it
 let _hlsPromise: Promise<typeof import('hls.js')> | null = null;
 function getHls() {
   if (!_hlsPromise) _hlsPromise = import('hls.js');
   return _hlsPromise;
 }
+// Kick off the preload immediately in idle time
+if (typeof requestIdleCallback !== 'undefined') {
+  requestIdleCallback(() => getHls(), { timeout: 2000 });
+} else {
+  setTimeout(() => getHls(), 0);
+}
 
 function detectFormat(url: string): VideoFormat {
+  if (url.includes('youtube.com/') || url.includes('youtu.be/')) return 'youtube';
   const clean = url.toLowerCase().split('?')[0].split('#')[0];
   if (clean.endsWith('.m3u8') || clean.includes('/hls/') || clean.includes('manifest.m3u8') || clean.includes('.m3u8')) return 'hls';
   if (clean.endsWith('.mpd') || clean.includes('/dash/')) return 'dash';
@@ -42,6 +56,7 @@ export default function PlayerPage() {
   })();
   const isExpired = session?.type === 'user' && daysLeft !== null && daysLeft <= 0;
 
+
   const searchParams = new URLSearchParams(window.location.search);
   const channelId = searchParams.get('channelId') || '';
   const miniState = getMiniPlayerState();
@@ -60,8 +75,12 @@ export default function PlayerPage() {
   const nextEpisodeId = searchParams.get('nextEpisodeId');
   const nextSeasonId = searchParams.get('nextSeasonId');
   const nextEpisodeTitle = searchParams.get('nextEpisodeTitle');
+  const nextEpisodeUrl = searchParams.get('nextEpisodeUrl') || '';
+  const nextEpisodeFormat = searchParams.get('nextEpisodeFormat') || '';
+  const nextSeasonNumber = searchParams.get('nextSeasonNumber') || '';
+  const nextEpisodeNumber = searchParams.get('nextEpisodeNumber') || '';
 
-  const backUrl = episodeId && seriesId ? `/serie/${seriesId}` : movieId ? `/pelicula/${movieId}` : type === 'movie' ? '/home?tab=movies' : type === 'episode' ? '/home?tab=series' : '/home';
+  const backUrl = episodeId && seriesId ? `/serie/${seriesId}` : movieId ? `/pelicula/${movieId}` : type === 'movie' ? '/home?tab=movies' : type === 'episode' ? '/home?tab=series' : type === 'channel' ? '/home?tab=channels' : '/home';
 
   const channels = miniState?.channels ?? [];
   const channelIndex = miniState?.channelIndex ?? 0;
@@ -69,16 +88,18 @@ export default function PlayerPage() {
 
   const authToken = getToken('user') || getToken('admin') || '';
 
-  function buildChannelUrl(chId: string | number, fmt: string): string {
+  function buildChannelUrl(chId: string | number, fmt: string, directUrl?: string): string {
+    if (fmt === 'youtube' && directUrl) return directUrl;
     if (fmt === 'hls') {
       return `/api/channels/${chId}/hls-proxy?token=${encodeURIComponent(authToken)}`;
     }
     return `/api/channels/${chId}/stream?token=${encodeURIComponent(authToken)}`;
   }
 
-  const initialFormat = miniState?.streamFormat || (rawUrl ? detectFormat(rawUrl) : 'native');
+  const storedFormat = searchParams.get('format') as VideoFormat | null;
+  const initialFormat = miniState?.streamFormat || storedFormat || (rawUrl ? detectFormat(rawUrl) : 'native');
   const initialUrl = (type === 'channel' && channelId)
-    ? buildChannelUrl(channelId, initialFormat)
+    ? buildChannelUrl(channelId, initialFormat, miniState?.url || rawUrl || undefined)
     : rawUrl;
 
   const [currentUrl, setCurrentUrl] = useState(initialUrl || rawUrl);
@@ -136,6 +157,10 @@ export default function PlayerPage() {
   const currentUrlRef = useRef(currentUrl);
   currentUrlRef.current = currentUrl;
   const retryCountRef = useRef(0);
+  // Throttle currentTime React state updates to max once per 500ms to avoid
+  // constant re-renders (timeupdate fires ~4x/sec) while keeping the UI smooth
+  const lastDisplayUpdateRef = useRef(0);
+  const isLiveRef = useRef(type === 'channel');
 
   const showControlsTemporarily = useCallback(() => {
     setShowControls(true);
@@ -149,11 +174,15 @@ export default function PlayerPage() {
     const onWaiting = () => setIsBuffering(true);
     const onCanPlay = () => { setIsBuffering(false); setIsLoading(false); };
     const onTimeUpdate = () => {
-      const t = video.currentTime;
-      setCurrentTime(t);
       const now = Date.now();
+      // Only update React state every 500ms — live channels don't need time tracking at all
+      if (!isLiveRef.current && now - lastDisplayUpdateRef.current > 500) {
+        lastDisplayUpdateRef.current = now;
+        setCurrentTime(video.currentTime);
+      }
       if (now - lastSaveRef.current > 5000) {
         lastSaveRef.current = now;
+        const t = video.currentTime;
         if (movieNumIdRef.current) {
           saveProgress(movieNumIdRef.current, t, video.duration || 0);
         }
@@ -202,9 +231,21 @@ export default function PlayerPage() {
       }
       let msg = 'No se pudo reproducir el video.';
       if (err) {
-        if (err.code === 4) msg = 'Formato no soportado. El canal puede no ser compatible con este navegador.';
-        else if (err.code === 3) msg = 'Error al decodificar el video. El canal puede estar sin señal.';
-        else if (err.code === 2) msg = 'Error de red al cargar el canal. Comprueba tu conexión.';
+        if (err.code === 4) {
+          if (type === 'movie' || type === 'episode') {
+            // Detect format from URL to give specific advice
+            const ext = currentUrlRef.current.split('?')[0].split('.').pop()?.toLowerCase() ?? '';
+            if (['mkv', 'avi', 'wmv', 'vob', 'asf', 'rmvb', 'rm'].includes(ext)) {
+              msg = `El formato .${ext.toUpperCase()} no es compatible con este navegador. Intenta usar Chrome o Edge, o convierte el archivo a MP4.`;
+            } else {
+              msg = 'Formato de video no soportado por este navegador. Intenta con Chrome o Edge.';
+            }
+          } else {
+            msg = 'Formato no soportado. El canal puede no ser compatible con este navegador.';
+          }
+        } else if (err.code === 3) msg = 'Error al decodificar el video. El archivo puede estar dañado o usar un codec no soportado.';
+        else if (err.code === 2) msg = 'Error de red al cargar el video. Comprueba tu conexión e intenta de nuevo.';
+        else if (err.code === 1) msg = 'Reproducción interrumpida. Intenta de nuevo.';
       }
       setError(msg);
       setIsLoading(false);
@@ -294,24 +335,34 @@ export default function PlayerPage() {
         if (fmt === 'hls') {
           const Hls = (await getHls()).default;
           if (Hls.isSupported()) {
+            const isChannel = type === 'channel';
             const hls = new Hls({
               enableWorker: true,
-              lowLatencyMode: true,
-              backBufferLength: 3,
-              maxBufferLength: 8,
-              maxMaxBufferLength: 15,
+              lowLatencyMode: isChannel,
+              // For channels: tiny buffer = instant start; for VOD: bigger = smooth
+              backBufferLength: isChannel ? 2 : 5,
+              maxBufferLength: isChannel ? 4 : 10,
+              maxMaxBufferLength: isChannel ? 8 : 20,
               startFragPrefetch: true,
-              startLevel: -1,
-              abrEwmaDefaultEstimate: 500_000,
+              // Start at lowest quality immediately for channels (ramps up fast),
+              // auto-select for VOD so we don't waste time on a bad first segment
+              startLevel: isChannel ? 0 : -1,
+              // Assume 2Mbps connection so ABR doesn't waste time probing bandwidth
+              abrEwmaDefaultEstimate: 2_000_000,
               progressive: true,
-              testBandwidth: true,
-              fragLoadingTimeOut: 3000,
-              manifestLoadingTimeOut: 5000,
-              levelLoadingTimeOut: 5000,
-              fragLoadingMaxRetry: 5,
-              manifestLoadingMaxRetry: 5,
-              nudgeMaxRetry: 10,
+              // Skip bandwidth test on channels — we want immediate playback
+              testBandwidth: !isChannel,
+              // Tight timeouts: fail fast so proxy fallback kicks in quickly
+              fragLoadingTimeOut: isChannel ? 2000 : 3000,
+              manifestLoadingTimeOut: isChannel ? 2500 : 4000,
+              levelLoadingTimeOut: isChannel ? 2500 : 4000,
+              fragLoadingMaxRetry: 4,
+              manifestLoadingMaxRetry: 3,
+              nudgeMaxRetry: 6,
+              nudgeOffset: 0.1,
               highBufferWatchdogPeriod: 1,
+              // Skip stall recovery delay for channels — jump immediately
+              stallReported: isChannel ? 0.3 : 1,
             });
             hls.loadSource(currentUrl);
             hls.attachMedia(video);
@@ -382,6 +433,9 @@ export default function PlayerPage() {
             setError('Tu navegador no soporta FLV nativo.');
             setIsLoading(false);
           }
+        } else if (fmt === 'youtube') {
+          setIsLoading(false);
+          setIsPlaying(true);
         } else {
           video.src = currentUrl;
           video.load();
@@ -447,12 +501,16 @@ export default function PlayerPage() {
   }, [showControlsTemporarily]);
 
   const toggleFullscreen = useCallback(() => {
-    const el = containerRef.current;
+    const el = containerRef.current as any;
     if (!el) return;
     if (!document.fullscreenElement) {
-      el.requestFullscreen().catch(() => {});
+      const req = el.requestFullscreen || el.webkitRequestFullscreen;
+      if (req) { try { req.call(el); } catch {} }
+      else setIsFullscreen(f => !f); // CSS-only fallback for iOS
     } else {
-      document.exitFullscreen();
+      const exit = (document as any).exitFullscreen || (document as any).webkitExitFullscreen;
+      if (exit) { try { exit.call(document); } catch {} }
+      else setIsFullscreen(false);
     }
     showControlsTemporarily();
   }, [showControlsTemporarily]);
@@ -460,7 +518,11 @@ export default function PlayerPage() {
   useEffect(() => {
     const onFsChange = () => setIsFullscreen(!!document.fullscreenElement);
     document.addEventListener('fullscreenchange', onFsChange);
-    return () => document.removeEventListener('fullscreenchange', onFsChange);
+    document.addEventListener('webkitfullscreenchange', onFsChange);
+    return () => {
+      document.removeEventListener('fullscreenchange', onFsChange);
+      document.removeEventListener('webkitfullscreenchange', onFsChange);
+    };
   }, []);
 
   const handleMinimize = useCallback(() => {
@@ -483,7 +545,7 @@ export default function PlayerPage() {
     const ch = channels[newIdx];
     if (!ch) return;
     const fmt = detectFormat(ch.streamUrl || '');
-    const proxyUrl = buildChannelUrl(ch.id, fmt);
+    const proxyUrl = buildChannelUrl(ch.id, fmt, fmt === 'youtube' ? ch.streamUrl : undefined);
     updateMiniPlayerState({ channelIndex: newIdx, url: proxyUrl, title: ch.name, streamFormat: fmt });
     setCurrentFormat(fmt);
     setCurrentUrl(proxyUrl);
@@ -500,11 +562,28 @@ export default function PlayerPage() {
     goToChannel((channelIndex + 1) % channels.length);
   }, [goToChannel, channelIndex, channels.length]);
 
+  const goNextEpisode = useCallback(() => {
+    if (!nextEpisodeId || !seriesId) return;
+    const params = new URLSearchParams({
+      url: nextEpisodeUrl,
+      title: nextEpisodeTitle || 'Episodio siguiente',
+      type: 'episode',
+      episodeId: nextEpisodeId,
+      seriesId,
+      seasonId: nextSeasonId || seasonId || '',
+      seasonNumber: nextSeasonNumber || seasonNumber || '',
+      episodeNumber: nextEpisodeNumber || '',
+      seriesTitle: seriesTitle || '',
+    });
+    if (nextEpisodeFormat) params.set('format', nextEpisodeFormat);
+    setLocation(`/player?${params.toString()}`);
+  }, [nextEpisodeId, nextEpisodeUrl, nextEpisodeTitle, nextSeasonId, nextSeasonNumber, nextEpisodeNumber, nextEpisodeFormat, seriesId, seasonId, seasonNumber, seriesTitle]);
+
   const controls = ['back', ...(hasChannels ? ['prevch'] : []), 'skipback', 'play', 'skipfwd', ...(hasChannels ? ['nextch'] : []), 'mute', 'minimize', 'fullscreen'];
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      switch (e.key) {
+      switch (normalizeKey(e)) {
         case 'ArrowRight':
           e.preventDefault();
           if (e.shiftKey) { skip(30); }
@@ -527,6 +606,16 @@ export default function PlayerPage() {
           if (hasChannels) goPrevChannel();
           else handleVolumeChange(volumeRef.current - 0.1);
           break;
+        case 'ChannelUp':
+          e.preventDefault();
+          if (hasChannels) goNextChannel();
+          showControlsTemporarily();
+          break;
+        case 'ChannelDown':
+          e.preventDefault();
+          if (hasChannels) goPrevChannel();
+          showControlsTemporarily();
+          break;
         case 'Enter':
           e.preventDefault();
           switch (controls[ctrlIndex]) {
@@ -548,8 +637,32 @@ export default function PlayerPage() {
           else handleMinimize();
           break;
         case ' ':
+        case 'MediaPlayPause':
           e.preventDefault();
           togglePlay();
+          showControlsTemporarily();
+          break;
+        case 'MediaFastForward':
+          e.preventDefault();
+          skip(10);
+          showControlsTemporarily();
+          break;
+        case 'MediaRewind':
+          e.preventDefault();
+          skip(-10);
+          showControlsTemporarily();
+          break;
+        case 'VolumeUp':
+          e.preventDefault();
+          handleVolumeChange(volumeRef.current + 0.1);
+          break;
+        case 'VolumeDown':
+          e.preventDefault();
+          handleVolumeChange(volumeRef.current - 0.1);
+          break;
+        case 'VolumeMute':
+          e.preventDefault();
+          toggleMute();
           break;
         case 'f':
         case 'F':
@@ -592,6 +705,29 @@ export default function PlayerPage() {
     );
   }
 
+  if (currentFormat === 'youtube' || detectFormat(currentUrl) === 'youtube') {
+    const ytId = extractYouTubeId(currentUrl);
+    if (!ytId) return <div className="flex items-center justify-center h-screen bg-black text-white/60 text-sm">URL de YouTube inválida</div>;
+    return (
+      <YouTubePlayerPage
+        videoId={ytId}
+        title={currentTitle}
+        onBack={() => setLocation(backUrl)}
+        episodeId={episodeId ? Number(episodeId) : undefined}
+        seriesId={seriesId ? Number(seriesId) : undefined}
+        seasonId={seasonId ? Number(seasonId) : undefined}
+        seasonNumber={seasonNumber ? Number(seasonNumber) : undefined}
+        episodeNumber={episodeNumber ? Number(episodeNumber) : undefined}
+        seriesTitle={seriesTitle || undefined}
+        nextEpisodeId={nextEpisodeId ? Number(nextEpisodeId) : undefined}
+        nextEpisodeTitle={nextEpisodeTitle || undefined}
+        nextEpisodeNumber={nextEpisodeNumber ? Number(nextEpisodeNumber) : undefined}
+        nextSeasonNumber={nextSeasonNumber ? Number(nextSeasonNumber) : undefined}
+        onNextEpisode={nextEpisodeId ? goNextEpisode : undefined}
+      />
+    );
+  }
+
   return (
     <div
       ref={containerRef}
@@ -603,6 +739,7 @@ export default function PlayerPage() {
       <video
         ref={videoRef}
         className={`w-full h-full object-contain ${error ? 'hidden' : ''}`}
+        style={{ willChange: 'transform', contain: 'strict' }}
         playsInline
         webkit-playsinline=""
         x-webkit-airplay="allow"

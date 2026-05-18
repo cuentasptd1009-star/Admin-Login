@@ -1,5 +1,6 @@
 import { useLocation, useRoute } from 'wouter';
-import { useEffect, useState, useMemo } from 'react';
+import { normalizeKey } from '@/lib/tv-remote';
+import { useEffect, useState, useMemo, useRef } from 'react';
 import { Play, ArrowLeft, Heart, ChevronDown, ChevronUp, Tv2, Lock, X, Clock, Film } from 'lucide-react';
 import { useGetMe, getGetMeQueryKey } from '@workspace/api-client-react';
 import { clearTokens } from '@/lib/auth';
@@ -7,6 +8,24 @@ import { fetchSeriesDetail } from '@/lib/api';
 import type { SeriesDetail, Season, Episode } from '@/lib/api';
 import { getEpisodeProgress, getSeriesProgress, toggleSeriesFavorite, getSeriesFavorites } from '@/lib/user-data';
 import logo from '@assets/imagen_1777670460131.png';
+import { YouTubePlayerPage } from '@/components/YouTubePlayerPage';
+
+function extractYtId(url: string): string | null {
+  const m = url?.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/)([^&\s?#]+)/);
+  return m ? m[1] : null;
+}
+
+type YtEpisodePlayer = {
+  videoId: string;
+  title: string;
+  episodeId: number;
+  seriesId: number;
+  seasonId: number;
+  seasonNumber: number;
+  episodeNumber: number;
+  startFrom?: number;
+  nextEp: { ep: Episode; season: Season } | null;
+};
 
 function fmtDuration(secs: number): string {
   const m = Math.floor(secs / 60);
@@ -22,16 +41,25 @@ function fmtProgress(secs: number): string {
   return `${m}:${String(s).padStart(2, '0')}`;
 }
 
+type SdZone = 'buttons' | 'seasons' | 'episodes';
+
 export default function SeriesDetail() {
-  const [, setLocation] = useLocation();
+  const [location, setLocation] = useLocation();
   const [, params] = useRoute('/serie/:id');
   const id = Number(params?.id);
+  const autoplay = new URLSearchParams(location.split('?')[1] ?? '').get('autoplay') === '1';
 
   const [series, setSeries] = useState<SeriesDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [activeSeason, setActiveSeason] = useState<number>(0);
   const [isFav, setIsFav] = useState(false);
   const [showExpiredOverlay, setShowExpiredOverlay] = useState(true);
+
+  const [sdZone, setSdZone] = useState<SdZone>('buttons');
+  const [btnIdx, setBtnIdx] = useState(0);
+  const [epIdx, setEpIdx] = useState(0);
+  const focusedEpRef = useRef<HTMLDivElement | null>(null);
+  const [ytPlayer, setYtPlayer] = useState<YtEpisodePlayer | null>(null);
 
   const { data: session, isError: sessionError } = useGetMe({ query: { queryKey: getGetMeQueryKey(), retry: false } });
 
@@ -52,6 +80,23 @@ export default function SeriesDetail() {
     setIsFav(getSeriesFavorites().includes(id));
   }, [id]);
 
+  // Auto-play last-watched episode when coming from "Seguir viendo"
+  useEffect(() => {
+    if (!autoplay || !series || loading) return;
+    const progress = getSeriesProgress(id);
+    if (!progress?.time || !progress.seasonId || !progress.episodeId) return;
+    const season = series.seasons.find(s => s.id === progress.seasonId);
+    const episode = season?.episodes.find(e => e.id === progress.episodeId);
+    if (season && episode) handlePlayEpisode(episode, season, progress.time);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoplay, series, loading]);
+
+  useEffect(() => {
+    if (sdZone === 'episodes' && focusedEpRef.current) {
+      focusedEpRef.current.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'center' });
+    }
+  }, [sdZone, epIdx]);
+
   const daysLeft = (() => {
     if (!session?.expiresAt) return null;
     return Math.ceil((new Date(session.expiresAt).getTime() - Date.now()) / (1000 * 60 * 60 * 24));
@@ -59,13 +104,36 @@ export default function SeriesDetail() {
   const isExpired = session?.type === 'user' && daysLeft !== null && daysLeft <= 0;
 
   const seriesProgress = useMemo(() => series ? getSeriesProgress(id) : null, [series, id]);
-
   const currentSeason = series?.seasons?.[activeSeason];
+  const episodes = currentSeason?.episodes ?? [];
+
+  const hasPlayBtn = !!(seriesProgress?.time && seriesProgress.time > 10) || !!(series?.seasons[0]?.episodes[0]);
+  const numBtns = (hasPlayBtn ? 1 : 0) + 1;
 
   const handlePlayEpisode = (episode: Episode, season: Season, startFrom?: number) => {
     if (isExpired) { setShowExpiredOverlay(true); return; }
-    const params = new URLSearchParams({
-      url: episode.filePath,
+    const url = episode.filePath ?? '';
+    const isYouTube = url.includes('youtube.com/') || url.includes('youtu.be/');
+    if (isYouTube) {
+      const videoId = extractYtId(url);
+      if (videoId) {
+        const nextEp = getNextEpisode(season, episode, series!);
+        setYtPlayer({
+          videoId,
+          title: episode.title,
+          episodeId: episode.id,
+          seriesId: id,
+          seasonId: season.id,
+          seasonNumber: season.seasonNumber,
+          episodeNumber: episode.episodeNumber,
+          startFrom,
+          nextEp: nextEp && extractYtId(nextEp.ep.filePath ?? '') ? nextEp : null,
+        });
+        return;
+      }
+    }
+    const p = new URLSearchParams({
+      url,
       title: episode.title,
       type: 'episode',
       episodeId: String(episode.id),
@@ -75,10 +143,19 @@ export default function SeriesDetail() {
       episodeNumber: String(episode.episodeNumber),
       seriesTitle: series?.title || '',
     });
-    if (startFrom !== undefined) params.set('startFrom', String(startFrom));
+    if ((episode as any).videoFormat) p.set('format', (episode as any).videoFormat);
+    if (startFrom !== undefined) p.set('startFrom', String(startFrom));
     const nextEp = getNextEpisode(season, episode, series!);
-    if (nextEp) { params.set('nextEpisodeId', String(nextEp.ep.id)); params.set('nextSeasonId', String(nextEp.season.id)); params.set('nextEpisodeTitle', nextEp.ep.title); }
-    setLocation(`/player?${params.toString()}`);
+    if (nextEp) {
+      p.set('nextEpisodeId', String(nextEp.ep.id));
+      p.set('nextSeasonId', String(nextEp.season.id));
+      p.set('nextEpisodeTitle', nextEp.ep.title);
+      p.set('nextEpisodeUrl', nextEp.ep.filePath);
+      p.set('nextSeasonNumber', String(nextEp.season.seasonNumber));
+      p.set('nextEpisodeNumber', String(nextEp.ep.episodeNumber));
+      if ((nextEp.ep as any).videoFormat) p.set('nextEpisodeFormat', (nextEp.ep as any).videoFormat);
+    }
+    setLocation(`/vod-player?${p.toString()}`);
   };
 
   const handleContinueFromProgress = () => {
@@ -92,6 +169,110 @@ export default function SeriesDetail() {
     const added = toggleSeriesFavorite(id);
     setIsFav(added);
   };
+
+  useEffect(() => {
+    if (!series) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (sdZone === 'buttons') {
+        switch (normalizeKey(e)) {
+          case 'ArrowLeft':
+            e.preventDefault();
+            if (btnIdx > 0) setBtnIdx(p => p - 1);
+            break;
+          case 'ArrowRight':
+            e.preventDefault();
+            if (btnIdx < numBtns - 1) setBtnIdx(p => p + 1);
+            break;
+          case 'ArrowDown':
+            e.preventDefault();
+            if (series.seasons.length > 1) { setSdZone('seasons'); }
+            else { setSdZone('episodes'); setEpIdx(0); }
+            break;
+          case 'ArrowUp':
+            e.preventDefault();
+            break;
+          case 'MediaPlayPause':
+          case 'Enter':
+            e.preventDefault();
+            if (btnIdx === 0 && hasPlayBtn) {
+              if (seriesProgress?.time && seriesProgress.time > 10) handleContinueFromProgress();
+              else if (series.seasons[0]?.episodes[0]) handlePlayEpisode(series.seasons[0].episodes[0], series.seasons[0]);
+            } else {
+              handleToggleFav();
+            }
+            break;
+          case 'Escape':
+          case 'Backspace':
+            e.preventDefault();
+            setLocation('/home?tab=series');
+            break;
+        }
+
+      } else if (sdZone === 'seasons') {
+        switch (normalizeKey(e)) {
+          case 'ArrowLeft':
+            e.preventDefault();
+            if (activeSeason > 0) setActiveSeason(p => p - 1);
+            else setSdZone('buttons');
+            break;
+          case 'ArrowRight':
+            e.preventDefault();
+            if (activeSeason < series.seasons.length - 1) setActiveSeason(p => p + 1);
+            break;
+          case 'ArrowDown':
+            e.preventDefault();
+            setSdZone('episodes'); setEpIdx(0);
+            break;
+          case 'ArrowUp':
+            e.preventDefault();
+            setSdZone('buttons');
+            break;
+          case 'MediaPlayPause':
+          case 'Enter':
+            e.preventDefault();
+            setSdZone('episodes'); setEpIdx(0);
+            break;
+          case 'Escape':
+          case 'Backspace':
+            e.preventDefault();
+            setSdZone('buttons');
+            break;
+        }
+
+      } else {
+        // episodes zone
+        switch (normalizeKey(e)) {
+          case 'ArrowDown':
+            e.preventDefault();
+            if (epIdx < episodes.length - 1) setEpIdx(p => p + 1);
+            break;
+          case 'ArrowUp':
+            e.preventDefault();
+            if (epIdx > 0) setEpIdx(p => p - 1);
+            else { if (series.seasons.length > 1) setSdZone('seasons'); else setSdZone('buttons'); }
+            break;
+          case 'MediaPlayPause':
+          case 'Enter': {
+            e.preventDefault();
+            const ep = episodes[epIdx];
+            if (ep) {
+              const prog = getEpisodeProgress(ep.id);
+              handlePlayEpisode(ep, currentSeason!, prog?.time);
+            }
+            break;
+          }
+          case 'Escape':
+          case 'Backspace':
+            e.preventDefault();
+            if (series.seasons.length > 1) setSdZone('seasons');
+            else setSdZone('buttons');
+            break;
+        }
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [sdZone, btnIdx, epIdx, activeSeason, currentSeason, episodes, series, seriesProgress, isExpired, hasPlayBtn, numBtns, isFav]);
 
   if (loading) {
     return (
@@ -112,11 +293,16 @@ export default function SeriesDetail() {
   }
 
   const bgImage = series.banner || series.poster;
+  const playBtnFocused = sdZone === 'buttons' && btnIdx === 0 && hasPlayBtn;
+  const favBtnFocused = sdZone === 'buttons' && (hasPlayBtn ? btnIdx === 1 : btnIdx === 0);
 
   return (
-    <div className="min-h-screen bg-background text-foreground flex flex-col">
+    <div className="min-h-screen bg-background text-foreground flex flex-col select-none">
       <header className="sticky top-0 z-50 bg-background/95 backdrop-blur border-b border-border px-3 sm:px-4 py-2 sm:py-3 flex items-center gap-3">
-        <button onClick={() => setLocation('/home?tab=series')} className="flex items-center gap-1.5 text-muted-foreground hover:text-foreground transition-colors text-sm flex-shrink-0">
+        <button
+          onClick={() => setLocation('/home?tab=series')}
+          className="flex items-center gap-1.5 text-muted-foreground hover:text-foreground transition-colors text-sm flex-shrink-0"
+        >
           <ArrowLeft className="w-4 h-4" />
           <span className="hidden sm:inline">Volver</span>
         </button>
@@ -165,21 +351,34 @@ export default function SeriesDetail() {
             </div>
             <div className="flex flex-wrap gap-2">
               {seriesProgress && seriesProgress.time > 10 ? (
-                <button onClick={handleContinueFromProgress} className="flex items-center gap-2 px-6 py-2.5 bg-white text-black rounded-lg font-bold text-sm hover:bg-white/90 transition-all active:scale-95 shadow-lg">
+                <button
+                  onClick={handleContinueFromProgress}
+                  className={`flex items-center gap-2 px-6 py-2.5 bg-white text-black rounded-lg font-bold text-sm hover:bg-white/90 transition-all active:scale-95 shadow-lg ${playBtnFocused ? 'ring-4 ring-primary scale-105 shadow-[0_0_20px_rgba(220,38,38,0.5)]' : ''}`}
+                >
                   {isExpired ? <Lock className="w-4 h-4" /> : <Play className="w-4 h-4 fill-black" />}
                   {isExpired ? 'Acceso vencido' : `Continuar T${seriesProgress.seasonNumber} E${seriesProgress.episodeNumber}`}
                 </button>
               ) : series.seasons[0]?.episodes[0] && (
-                <button onClick={() => handlePlayEpisode(series.seasons[0].episodes[0], series.seasons[0])} className="flex items-center gap-2 px-6 py-2.5 bg-white text-black rounded-lg font-bold text-sm hover:bg-white/90 transition-all active:scale-95 shadow-lg">
+                <button
+                  onClick={() => handlePlayEpisode(series.seasons[0].episodes[0], series.seasons[0])}
+                  className={`flex items-center gap-2 px-6 py-2.5 bg-white text-black rounded-lg font-bold text-sm hover:bg-white/90 transition-all active:scale-95 shadow-lg ${playBtnFocused ? 'ring-4 ring-primary scale-105 shadow-[0_0_20px_rgba(220,38,38,0.5)]' : ''}`}
+                >
                   {isExpired ? <Lock className="w-4 h-4" /> : <Play className="w-4 h-4 fill-black" />}
                   {isExpired ? 'Acceso vencido' : 'Reproducir'}
                 </button>
               )}
-              <button onClick={handleToggleFav} className={`flex items-center gap-2 px-4 py-2.5 rounded-lg font-semibold text-sm transition-all active:scale-95 border ${isFav ? 'bg-red-500/10 border-red-500/40 text-red-400 hover:bg-red-500/20' : 'bg-secondary border-border text-muted-foreground hover:text-foreground'}`}>
+              <button
+                onClick={handleToggleFav}
+                className={`flex items-center gap-2 px-4 py-2.5 rounded-lg font-semibold text-sm transition-all active:scale-95 border ${isFav ? 'bg-red-500/10 border-red-500/40 text-red-400 hover:bg-red-500/20' : 'bg-secondary border-border text-muted-foreground hover:text-foreground'} ${favBtnFocused ? 'ring-4 ring-primary scale-105' : ''}`}
+              >
                 <Heart className={`w-4 h-4 ${isFav ? 'fill-red-400 text-red-400' : ''}`} />
                 {isFav ? 'En favoritos' : 'Favorito'}
               </button>
             </div>
+
+            {sdZone === 'buttons' && (
+              <p className="text-muted-foreground/40 text-xs">◀▶ Navegar botones · ▼ Temporadas/Episodios · Enter Seleccionar</p>
+            )}
           </div>
         </div>
 
@@ -197,8 +396,8 @@ export default function SeriesDetail() {
               {series.seasons.map((season, si) => (
                 <button
                   key={season.id}
-                  onClick={() => setActiveSeason(si)}
-                  className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-all ${activeSeason === si ? 'bg-primary text-primary-foreground' : 'bg-secondary text-muted-foreground hover:text-foreground'}`}
+                  onClick={() => { setActiveSeason(si); setSdZone('episodes'); setEpIdx(0); }}
+                  className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-all ${activeSeason === si ? 'bg-primary text-primary-foreground' : 'bg-secondary text-muted-foreground hover:text-foreground'} ${sdZone === 'seasons' && activeSeason === si ? 'ring-4 ring-primary scale-105 shadow-[0_0_15px_rgba(220,38,38,0.4)]' : ''}`}
                 >
                   {season.title || `Temporada ${season.seasonNumber}`}
                   <span className="ml-1.5 text-xs opacity-60">({season.episodes.length})</span>
@@ -206,16 +405,25 @@ export default function SeriesDetail() {
               ))}
             </div>
 
+            {sdZone === 'seasons' && (
+              <p className="text-muted-foreground/40 text-xs">◀▶ Cambiar temporada · ▼ Episodios · ▲ Volver</p>
+            )}
+
             {currentSeason && (
               <div className="space-y-2">
-                {currentSeason.episodes.map((ep) => {
+                {sdZone === 'episodes' && (
+                  <p className="text-muted-foreground/40 text-xs">▲▼ Navegar episodios · Enter Reproducir · Esc Volver</p>
+                )}
+                {currentSeason.episodes.map((ep, ei) => {
                   const prog = getEpisodeProgress(ep.id);
                   const progPct = prog && prog.duration > 0 ? Math.min(100, (prog.time / prog.duration) * 100) : 0;
+                  const isFocusedEp = sdZone === 'episodes' && epIdx === ei;
                   return (
                     <div
                       key={ep.id}
+                      ref={isFocusedEp ? (el) => { focusedEpRef.current = el; } : undefined}
                       onClick={() => handlePlayEpisode(ep, currentSeason, prog?.time)}
-                      className="flex items-center gap-3 p-3 rounded-xl bg-card border border-border hover:border-primary/40 hover:bg-card/80 cursor-pointer transition-all group"
+                      className={`flex items-center gap-3 p-3 rounded-xl bg-card border cursor-pointer transition-all group ${isFocusedEp ? 'border-primary bg-primary/5 ring-2 ring-primary shadow-[0_0_15px_rgba(220,38,38,0.3)] scale-[1.01]' : 'border-border hover:border-primary/40 hover:bg-card/80'}`}
                     >
                       <div className="flex-shrink-0 w-20 sm:w-28 aspect-video bg-muted rounded-lg overflow-hidden relative">
                         {ep.thumbnail ? (
@@ -225,7 +433,7 @@ export default function SeriesDetail() {
                             <Film className="w-6 h-6 text-muted-foreground/30" />
                           </div>
                         )}
-                        <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                        <div className={`absolute inset-0 bg-black/40 flex items-center justify-center transition-opacity ${isFocusedEp ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}>
                           <Play className="w-6 h-6 text-white fill-white" />
                         </div>
                         {progPct > 0 && (
@@ -263,6 +471,29 @@ export default function SeriesDetail() {
           </div>
         )}
       </main>
+
+      {ytPlayer && (
+        <YouTubePlayerPage
+          videoId={ytPlayer.videoId}
+          title={ytPlayer.title}
+          onBack={() => setYtPlayer(null)}
+          episodeId={ytPlayer.episodeId}
+          seriesId={ytPlayer.seriesId}
+          seasonId={ytPlayer.seasonId}
+          seasonNumber={ytPlayer.seasonNumber}
+          episodeNumber={ytPlayer.episodeNumber}
+          startFrom={ytPlayer.startFrom}
+          seriesTitle={series?.title}
+          nextEpisodeId={ytPlayer.nextEp?.ep.id}
+          nextEpisodeTitle={ytPlayer.nextEp?.ep.title}
+          nextEpisodeNumber={ytPlayer.nextEp?.ep.episodeNumber}
+          nextSeasonNumber={ytPlayer.nextEp?.season.seasonNumber}
+          onNextEpisode={ytPlayer.nextEp ? () => {
+            const { ep, season } = ytPlayer.nextEp!;
+            handlePlayEpisode(ep, season);
+          } : undefined}
+        />
+      )}
     </div>
   );
 }

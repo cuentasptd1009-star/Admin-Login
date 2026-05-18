@@ -51,7 +51,7 @@ class InMemoryCache {
 export const cache = new InMemoryCache();
 
 export const TTL = {
-  SHORT: 15_000,
-  MEDIUM: 30_000,
-  LONG: 60_000,
+  SHORT: 120_000,
+  MEDIUM: 300_000,
+  LONG: 600_000,
 } as const;

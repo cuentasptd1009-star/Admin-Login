@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Play, Info, Star } from 'lucide-react';
+import { Play, Info } from 'lucide-react';
 
 export interface HeroBannerItem {
   id: number;
@@ -17,34 +17,49 @@ interface HeroBannerProps {
   items: HeroBannerItem[];
   onPlay: (item: HeroBannerItem) => void;
   onInfo: (item: HeroBannerItem) => void;
+  overrideItem?: HeroBannerItem | null;
+  focusedBtnIndex?: number | null;
+  currentIndex?: number;
+  onCurrentChange?: (idx: number) => void;
 }
 
-export function HeroBanner({ items, onPlay, onInfo }: HeroBannerProps) {
-  const [current, setCurrent] = useState(0);
+export function HeroBanner({ items, onPlay, onInfo, overrideItem, focusedBtnIndex, currentIndex, onCurrentChange }: HeroBannerProps) {
+  const [internalCurrent, setInternalCurrent] = useState(0);
   const [loaded, setLoaded] = useState(false);
 
+  const current = currentIndex !== undefined ? currentIndex : internalCurrent;
+  const setCurrent = (v: number | ((p: number) => number)) => {
+    const next = typeof v === 'function' ? v(current) : v;
+    setInternalCurrent(next);
+    onCurrentChange?.(next);
+  };
+
   useEffect(() => {
-    if (items.length <= 1) return;
+    if (overrideItem || items.length <= 1) return;
     const timer = setInterval(() => {
       setCurrent(p => (p + 1) % items.length);
       setLoaded(false);
     }, 8000);
     return () => clearInterval(timer);
-  }, [items.length]);
+  }, [items.length, overrideItem]);
 
   if (!items.length) return null;
 
-  const item = items[current];
+  const item = overrideItem ?? items[current] ?? items[0];
+  if (!item) return null;
   const bgImage = item.banner || item.poster;
 
+  const playFocused = focusedBtnIndex === 0;
+  const infoFocused = focusedBtnIndex === 1;
+
   return (
-    <div className="relative w-full overflow-hidden" style={{ aspectRatio: '16/7', minHeight: '240px', maxHeight: '520px' }}>
+    <div className="relative w-full overflow-hidden" style={{ aspectRatio: '16/7', minHeight: '240px', maxHeight: '560px' }}>
       {bgImage && (
         <img
           key={bgImage}
           src={bgImage}
           alt={item.title}
-          className={`absolute inset-0 w-full h-full object-cover transition-opacity duration-700 ${loaded ? 'opacity-100' : 'opacity-0'}`}
+          className={`absolute inset-0 w-full h-full object-cover transition-opacity duration-500 ${loaded ? 'opacity-100' : 'opacity-0'}`}
           onLoad={() => setLoaded(true)}
           onError={() => setLoaded(true)}
         />
@@ -53,55 +68,55 @@ export function HeroBanner({ items, onPlay, onInfo }: HeroBannerProps) {
         <div className="absolute inset-0 bg-gradient-to-br from-slate-900 to-slate-800" />
       )}
 
-      <div className="absolute inset-0 bg-gradient-to-r from-black/90 via-black/50 to-transparent" />
-      <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-black/20" />
+      <div className="absolute inset-0 bg-gradient-to-r from-black/95 via-black/60 to-transparent" />
+      <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-transparent to-black/30" />
 
-      <div className="absolute inset-0 flex flex-col justify-end p-4 sm:p-8 md:p-12 max-w-2xl">
+      {focusedBtnIndex !== null && focusedBtnIndex !== undefined && (
+        <div className="absolute inset-0 ring-inset ring-2 ring-primary/30 pointer-events-none rounded-none" />
+      )}
+
+      <div className="absolute inset-0 flex flex-col justify-end p-5 sm:p-10 md:p-14 max-w-2xl">
         <div className="space-y-2 sm:space-y-3">
           <div className="flex items-center gap-2 flex-wrap">
-            {item.type === 'series' && (
-              <span className="px-2 py-0.5 bg-primary text-primary-foreground text-[10px] font-bold rounded uppercase tracking-widest">Serie</span>
-            )}
-            {item.genre && (
-              <span className="text-white/60 text-xs">{item.genre}</span>
-            )}
-            {item.year && (
-              <span className="text-white/60 text-xs">{item.year}</span>
-            )}
+            <span className={`px-2 py-0.5 text-[10px] font-bold rounded uppercase tracking-widest ${item.type === 'series' ? 'bg-blue-600 text-white' : 'bg-primary text-primary-foreground'}`}>
+              {item.type === 'series' ? 'Serie' : 'Película'}
+            </span>
+            {item.genre && <span className="text-white/60 text-xs">{item.genre}</span>}
+            {item.year && <span className="text-white/60 text-xs">· {item.year}</span>}
           </div>
 
-          <h1 className="text-2xl sm:text-3xl md:text-5xl font-extrabold text-white leading-tight drop-shadow-lg line-clamp-2">
+          <h1 className="text-2xl sm:text-4xl md:text-5xl font-extrabold text-white leading-tight drop-shadow-lg line-clamp-2">
             {item.title}
           </h1>
 
           {item.description && (
-            <p className="text-white/80 text-xs sm:text-sm leading-relaxed line-clamp-2 sm:line-clamp-3 max-w-lg drop-shadow">
+            <p className="text-white/75 text-xs sm:text-sm leading-relaxed line-clamp-2 sm:line-clamp-3 max-w-lg drop-shadow">
               {item.description}
             </p>
           )}
 
-          <div className="flex items-center gap-2 pt-1 sm:pt-2">
+          <div className="flex items-center gap-3 pt-1 sm:pt-3">
             <button
               onClick={() => onPlay(item)}
-              className="flex items-center gap-2 px-4 sm:px-6 py-2 sm:py-2.5 bg-white text-black rounded-lg font-bold text-sm sm:text-base hover:bg-white/90 transition-all active:scale-95 shadow-lg"
+              className={`flex items-center gap-2 px-5 sm:px-7 py-2.5 sm:py-3 bg-orange-500 hover:bg-orange-400 text-white rounded-xl font-bold text-sm sm:text-base transition-all active:scale-95 shadow-lg shadow-orange-500/30 ${playFocused ? 'ring-4 ring-white scale-105 shadow-[0_0_20px_rgba(255,255,255,0.4)]' : ''}`}
             >
-              <Play className="w-4 h-4 sm:w-5 sm:h-5 fill-black" />
-              <span className="hidden xs:inline">Reproducir</span>
-              <span className="xs:hidden">Play</span>
+              <Play className="w-4 h-4 sm:w-5 sm:h-5 fill-white" />
+              Ver ahora
             </button>
             <button
               onClick={() => onInfo(item)}
-              className="flex items-center gap-2 px-3 sm:px-5 py-2 sm:py-2.5 bg-white/20 backdrop-blur-sm text-white rounded-lg font-semibold text-sm hover:bg-white/30 transition-all active:scale-95 border border-white/20"
+              className={`flex items-center gap-2 px-4 sm:px-6 py-2.5 sm:py-3 bg-white/10 hover:bg-white/20 text-white rounded-xl font-semibold text-sm transition-[background-color,transform,box-shadow] duration-150 active:scale-95 border border-white/15 ${infoFocused ? 'ring-4 ring-white scale-105 bg-white/25 shadow-[0_0_20px_rgba(255,255,255,0.3)]' : ''}`}
             >
               <Info className="w-4 h-4" />
-              <span className="hidden sm:inline">Más info</span>
+              <span className="hidden sm:inline">Más información</span>
+              <span className="sm:hidden">Info</span>
             </button>
           </div>
         </div>
       </div>
 
-      {items.length > 1 && (
-        <div className="absolute bottom-3 right-4 flex gap-1.5">
+      {!overrideItem && items.length > 1 && (
+        <div className="absolute bottom-4 right-5 flex gap-1.5">
           {items.map((_, i) => (
             <button
               key={i}

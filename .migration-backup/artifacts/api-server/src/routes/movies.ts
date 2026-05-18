@@ -57,9 +57,10 @@ router.get("/movies", async (req: Request, res: Response) => {
 
 router.get("/movies/search-poster", requireAdminAuth, async (req: Request, res: Response) => {
   const title = (req.query.q as string || '').trim();
-  if (!title) { res.json({ poster: null, title: null }); return; }
+  if (!title) { res.json({ poster: null, title: null, year: null, genre: null, description: null }); return; }
 
-  const tmdbKey = process.env.TMDB_API_KEY;
+  const { getTmdbApiKey } = await import("./settings.js");
+  const tmdbKey = await getTmdbApiKey();
   if (tmdbKey) {
     try {
       const url = `https://api.themoviedb.org/3/search/movie?api_key=${tmdbKey}&query=${encodeURIComponent(title)}&language=es-ES`;
@@ -69,7 +70,11 @@ router.get("/movies/search-poster", requireAdminAuth, async (req: Request, res: 
         const m = data.results[0];
         res.json({
           poster: m.poster_path ? `https://image.tmdb.org/t/p/w500${m.poster_path}` : null,
+          banner: m.backdrop_path ? `https://image.tmdb.org/t/p/original${m.backdrop_path}` : null,
           title: m.title || title,
+          year: m.release_date ? parseInt(m.release_date.split('-')[0]) : null,
+          genre: m.genre_ids?.[0] ? null : null,
+          description: m.overview || null,
         });
         return;
       }
@@ -85,14 +90,18 @@ router.get("/movies/search-poster", requireAdminAuth, async (req: Request, res: 
       if (data.Response === 'True') {
         res.json({
           poster: data.Poster !== 'N/A' ? data.Poster : null,
+          banner: null,
           title: data.Title || title,
+          year: data.Year ? parseInt(data.Year) : null,
+          genre: data.Genre?.split(',')[0]?.trim() || null,
+          description: data.Plot !== 'N/A' ? data.Plot : null,
         });
         return;
       }
     } catch {}
   }
 
-  res.json({ poster: null, title: null });
+  res.json({ poster: null, banner: null, title: null, year: null, genre: null, description: null });
 });
 
 router.post("/movies/scan-folder", requireAdminAuth, async (req: Request, res: Response) => {
@@ -184,6 +193,7 @@ router.post("/movies", requireAdminAuth, async (req: Request, res: Response) => 
   const [created] = await db.insert(moviesTable).values({
     title: parsed.data.title,
     filePath: parsed.data.filePath,
+    videoFormat: (parsed.data as any).videoFormat ?? null,
     description: parsed.data.description ?? null,
     poster: parsed.data.poster ?? null,
     category: parsed.data.category ?? null,

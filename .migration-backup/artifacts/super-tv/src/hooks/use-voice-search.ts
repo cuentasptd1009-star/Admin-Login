@@ -56,7 +56,8 @@ export function useVoiceSearch({
 
     recognition.onresult = (event: any) => {
       const transcript: string = event.results?.[0]?.[0]?.transcript ?? '';
-      if (transcript.trim()) onResult(transcript.trim());
+      const cleaned = transcript.trim().replace(/[.,!?;:…]+$/, '');
+      if (cleaned) onResult(cleaned);
     };
 
     recognition.onerror = (event: any) => {

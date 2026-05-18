@@ -1,6 +1,22 @@
 import { useCallback } from 'react';
 import { tvKeyboardStore } from '@/lib/tv-keyboard-store';
 
+function isTvBrowser(): boolean {
+  const ua = navigator.userAgent;
+  return (
+    /Tizen/i.test(ua) ||       // Samsung Smart TV
+    /Web0S|WebOS/i.test(ua) || // LG Smart TV
+    /HbbTV/i.test(ua) ||       // Generic Smart TV standard
+    /SMART-TV|SmartTV/i.test(ua) ||
+    /\bTV\b/i.test(ua) ||      // Generic "TV" token
+    /AFT[A-Z0-9]+/i.test(ua) || // Amazon Fire TV
+    /BRAVIA/i.test(ua) ||       // Sony Bravia
+    /Roku/i.test(ua) ||
+    /PhilipsTV/i.test(ua) ||
+    /OPR\/.*TV/i.test(ua)       // Opera TV
+  );
+}
+
 interface OpenKeyboardOptions {
   value: string;
   onChange: (v: string) => void;
@@ -15,6 +31,14 @@ export function useTvKeyboard() {
     opts?: OpenKeyboardOptions
   ) => {
     if (opts) {
+      if (!isTvBrowser()) {
+        if (el) {
+          el.removeAttribute('readonly');
+          el.focus();
+          try { el.click(); } catch {}
+        }
+        return;
+      }
       tvKeyboardStore.open({
         value: opts.value,
         onChange: opts.onChange,

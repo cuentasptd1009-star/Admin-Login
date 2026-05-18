@@ -1,5 +1,5 @@
 import { lazy, Suspense } from "react";
-import { Switch, Route, Router as WouterRouter } from "wouter";
+import { Switch, Route, Router as WouterRouter, useSearch } from "wouter";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -10,8 +10,10 @@ const NotFound = lazy(() => import("@/pages/not-found"));
 const Login = lazy(() => import("@/pages/login"));
 const Home = lazy(() => import("@/pages/home"));
 const PlayerPage = lazy(() => import("@/pages/player"));
+const VodPlayerPage = lazy(() => import("@/pages/vod-player"));
 const AdminPanel = lazy(() => import("@/pages/admin"));
 const SubadminPanel = lazy(() => import("@/pages/subadmin"));
+const ActivarPage = lazy(() => import("@/pages/activar"));
 const MovieDetail = lazy(() => import("@/pages/movie-detail"));
 const SeriesDetail = lazy(() => import("@/pages/series-detail"));
 const MiniPlayer = lazy(() =>
@@ -32,24 +34,36 @@ setAuthTokenGetter(() => {
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
-      staleTime: 30 * 1000,
-      gcTime: 5 * 60 * 1000,
+      staleTime: 2 * 60 * 1000,
+      gcTime: 10 * 60 * 1000,
       retry: 1,
       refetchOnWindowFocus: false,
     },
   },
 });
 
+function PlayerRoute() {
+  const search = useSearch();
+  return <PlayerPage key={search} />;
+}
+
+function VodPlayerRoute() {
+  const search = useSearch();
+  return <VodPlayerPage key={search} />;
+}
+
 function Router() {
   return (
     <Switch>
       <Route path="/" component={Login} />
       <Route path="/home" component={Home} />
-      <Route path="/player" component={PlayerPage} />
+      <Route path="/player" component={PlayerRoute} />
+      <Route path="/vod-player" component={VodPlayerRoute} />
       <Route path="/pelicula/:id" component={MovieDetail} />
       <Route path="/serie/:id" component={SeriesDetail} />
       <Route path="/admin" component={AdminPanel} />
       <Route path="/subadmin" component={SubadminPanel} />
+      <Route path="/activar" component={ActivarPage} />
       <Route component={NotFound} />
     </Switch>
   );

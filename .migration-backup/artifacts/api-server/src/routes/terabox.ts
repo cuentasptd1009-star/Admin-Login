@@ -7,7 +7,7 @@ import { cache } from "../lib/cache.js";
 
 const router = Router();
 
-const VIDEO_EXTS = new Set(['mp4', 'mkv', 'avi', 'mov', 'webm', 'ts', 'flv', 'wmv', 'mpg', 'mpeg', 'm4v', 'm3u8']);
+const VIDEO_EXTS = new Set(['mp4', 'mkv', 'avi', 'mov', 'webm', 'ts', 'flv', 'wmv', 'mpg', 'mpeg', 'm4v', 'm3u8', 'divx', 'mp2ts', 'rmvb', 'rm', '3gp', 'ogv', 'vob', 'asf', 'm2ts', 'mts']);
 const IMAGE_EXTS = new Set(['jpg', 'jpeg', 'png', 'webp', 'gif']);
 
 function isVideo(name: string) {
@@ -16,8 +16,9 @@ function isVideo(name: string) {
 function isImage(name: string) {
   return IMAGE_EXTS.has(name.split('.').pop()?.toLowerCase() ?? '');
 }
+// Strip only the file extension — keep the exact filename as the title
 function cleanTitle(name: string) {
-  return name.replace(/\.[^.]+$/, '').replace(/[._\-]+/g, ' ').replace(/\s+/g, ' ').trim();
+  return name.replace(/\.[^.]+$/, '').trim();
 }
 function extractShortcode(url: string): string | null {
   const m = url.match(/\/s\/([A-Za-z0-9_\-]+)/);
@@ -157,7 +158,7 @@ router.post("/terabox/analyze", requireAdminAuth, async (req: Request, res: Resp
   }
 
   if (folders.length > 0 && uk && shareid && token) {
-    for (const folder of folders.slice(0, 20)) {
+    for (const folder of folders) {
       const seasonNum = detectSeasonFolder(folder.server_filename);
       const subFiles = await fetchSubfolder(shortcode, uk, shareid, token, `/${folder.server_filename}`);
       const subVideos = subFiles.filter(f => !f.isdir && isVideo(f.server_filename));

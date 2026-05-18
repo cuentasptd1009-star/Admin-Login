@@ -14,6 +14,14 @@ import subadminSettingsRouter from "./subadmin-settings.js";
 import whatsappAlertsRouter from "./whatsapp-alerts.js";
 import seriesRouter from "./series.js";
 import teraboxRouter from "./terabox.js";
+import smartImportRouter from "./smartImport.js";
+import detectFormatRouter from "./detectFormat.js";
+import videoUploadRouter from "./videoUpload.js";
+import dropboxRouter from "./dropbox.js";
+import deviceAuthRouter from "./deviceAuth.js";
+import archiveSearchRouter from "./archiveSearch.js";
+import youtubeSearchRouter from "./youtubeSearch.js";
+import userSearchRouter from "./userSearch.js";
 
 const router: IRouter = Router();
 
@@ -32,5 +40,13 @@ router.use(settingsRouter);
 router.use(subadminSettingsRouter);
 router.use(whatsappAlertsRouter);
 router.use(teraboxRouter);
+router.use(smartImportRouter);
+router.use(detectFormatRouter);
+router.use(videoUploadRouter);
+router.use(dropboxRouter);
+router.use(deviceAuthRouter);
+router.use(archiveSearchRouter);
+router.use(youtubeSearchRouter);
+router.use(userSearchRouter);
 
 export default router;

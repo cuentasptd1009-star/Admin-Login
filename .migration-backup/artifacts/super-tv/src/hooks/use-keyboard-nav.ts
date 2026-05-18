@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import { normalizeKey } from '@/lib/tv-remote';
 
 interface UseKeyboardNavProps {
   itemsCount: number;
@@ -21,7 +22,7 @@ export function useKeyboardNav({
     (e: KeyboardEvent) => {
       if (!enabled || itemsCount === 0) return;
 
-      switch (e.key) {
+      switch (normalizeKey(e)) {
         case 'ArrowRight':
           e.preventDefault();
           setActiveIndex((prev) => (prev + 1) % itemsCount);
@@ -38,6 +39,7 @@ export function useKeyboardNav({
           e.preventDefault();
           setActiveIndex((prev) => Math.max(prev - columns, 0));
           break;
+        case 'MediaPlayPause':
         case 'Enter':
           e.preventDefault();
           onEnter?.(activeIndex);

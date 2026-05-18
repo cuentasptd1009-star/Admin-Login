@@ -1,6 +1,7 @@
 import { useRef, useEffect, memo } from 'react';
 import { ContentCard } from './ContentCard';
 import type { WatchProgress } from '@/lib/user-data';
+import type { HeroBannerItem } from './HeroBanner';
 
 export interface ChannelItem {
   id: number;
@@ -14,6 +15,10 @@ export interface MovieItem {
   id: number;
   title: string;
   poster?: string | null;
+  banner?: string | null;
+  description?: string | null;
+  genre?: string | null;
+  year?: number | null;
   category?: string | null;
   createdAt: string;
   filePath?: string | null;
@@ -38,6 +43,8 @@ interface ContentRowProps {
   isNewFn?: (item: ContentItem) => boolean;
   showProgress?: boolean;
   sectionRef?: (el: HTMLElement | null) => void;
+  onHoverItem?: (item: HeroBannerItem | null) => void;
+  portrait?: boolean;
 }
 
 export const ContentRow = memo(function ContentRow({
@@ -53,6 +60,8 @@ export const ContentRow = memo(function ContentRow({
   isNewFn,
   showProgress = false,
   sectionRef,
+  onHoverItem,
+  portrait = false,
 }: ContentRowProps) {
   const cardRefs = useRef<(HTMLDivElement | null)[]>([]);
 
@@ -69,20 +78,16 @@ export const ContentRow = memo(function ContentRow({
   if (items.length === 0) return null;
 
   return (
-    <section ref={sectionRef} className="space-y-2">
-      <div className="flex items-center gap-2 px-1">
+    <section ref={sectionRef} className="space-y-2.5">
+      <div className="flex items-center gap-3 px-1">
         <h2
-          className={`text-sm sm:text-base font-bold tracking-wide transition-colors duration-200 ${
-            isFocusedRow ? 'text-foreground' : 'text-foreground/70'
+          className={`text-sm sm:text-base font-semibold tracking-wide transition-colors duration-200 ${
+            isFocusedRow ? 'text-white' : 'text-white/70'
           }`}
         >
-          {emoji && <span className="mr-1.5">{emoji}</span>}
           {title}
-          <span className="ml-2 text-[11px] font-normal text-muted-foreground/50">{items.length}</span>
         </h2>
-        {isFocusedRow && (
-          <span className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse flex-shrink-0" />
-        )}
+        <span className="text-[11px] font-normal text-white/25">{items.length}</span>
       </div>
 
       <div
@@ -103,6 +108,18 @@ export const ContentRow = memo(function ContentRow({
           const fav = !ch && favSet ? favSet.has(item.id) : false;
           const badge = !ch && isNewFn && isNewFn(item) ? 'NUEVO' : null;
 
+          const heroItem: HeroBannerItem | null = !ch ? {
+            id: item.id,
+            title: (item as MovieItem).title,
+            description: (item as MovieItem).description,
+            banner: (item as MovieItem).banner,
+            poster: (item as MovieItem).poster,
+            category: (item as MovieItem).category,
+            genre: (item as MovieItem).genre,
+            year: (item as MovieItem).year,
+            type: 'movie',
+          } : null;
+
           return (
             <ContentCard
               key={`${ch ? 'c' : 'm'}-${item.id}`}
@@ -113,6 +130,7 @@ export const ContentRow = memo(function ContentRow({
               subtitle={item.category ?? undefined}
               image={image}
               isChannel={ch}
+              portrait={portrait && !ch}
               isFocused={isFocusedRow && focusedIndex === idx}
               progress={prog ?? null}
               isFavorite={fav}
@@ -126,6 +144,8 @@ export const ContentRow = memo(function ContentRow({
                     }
                   : undefined
               }
+              onHover={heroItem && onHoverItem ? () => onHoverItem(heroItem) : undefined}
+              onHoverEnd={onHoverItem ? () => onHoverItem(null) : undefined}
             />
           );
         })}

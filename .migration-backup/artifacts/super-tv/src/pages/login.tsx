@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useLocation } from 'wouter';
 import { useLoginWithCode } from '@workspace/api-client-react';
 import { Button } from '@/components/ui/button';
@@ -6,10 +6,39 @@ import { Input } from '@/components/ui/input';
 import { setToken, getToken } from '@/lib/auth';
 import { usePwaInstall } from '@/hooks/use-pwa-install';
 import { useTvKeyboard } from '@/hooks/use-tv-keyboard';
-import { Download, Share2, Smartphone } from 'lucide-react';
+import { Download, Share2, Smartphone, QrCode, X, Tv, CheckCircle, Loader2 } from 'lucide-react';
 import logo from '@assets/imagen_1777670460131.png';
 
-type FocusZone = 'input' | 'submit' | 'install' | 'shortcut';
+type FocusZone = 'input' | 'submit' | 'qr' | 'install' | 'shortcut';
+
+function getOrCreateDeviceId(): string {
+  try {
+    let id = localStorage.getItem('supertv_device_id');
+    if (!id) {
+      id = crypto.randomUUID();
+      localStorage.setItem('supertv_device_id', id);
+    }
+    return id;
+  } catch {
+    return Math.random().toString(36).slice(2) + Date.now().toString(36);
+  }
+}
+
+function isTvDevice(): boolean {
+  const ua = navigator.userAgent;
+  return (
+    /Tizen/i.test(ua) ||
+    /Web0S|WebOS/i.test(ua) ||
+    /HbbTV/i.test(ua) ||
+    /SMART-TV|SmartTV/i.test(ua) ||
+    /\bTV\b/i.test(ua) ||
+    /AFT[A-Z0-9]+/i.test(ua) ||
+    /BRAVIA/i.test(ua) ||
+    /Roku/i.test(ua) ||
+    /PhilipsTV/i.test(ua) ||
+    /OPR\/.*TV/i.test(ua)
+  );
+}
 
 export default function Login() {
   const [code, setCode] = useState('');
@@ -18,14 +47,59 @@ export default function Login() {
   const [showHint, setShowHint] = useState(false);
   const [showShortcutHint, setShowShortcutHint] = useState(false);
   const [focusZone, setFocusZone] = useState<FocusZone>('input');
+  const [showQrModal, setShowQrModal] = useState(false);
+  const [qrActivated, setQrActivated] = useState(false);
+  const [deviceId] = useState(() => getOrCreateDeviceId());
+  const isTV = isTvDevice();
   const [, setLocation] = useLocation();
   const { canInstall, install, showInstallButton, isIosSafari } = usePwaInstall();
   const { openKeyboard } = useTvKeyboard();
 
   const inputRef = useRef<HTMLInputElement>(null);
   const submitRef = useRef<HTMLButtonElement>(null);
+  const qrRef = useRef<HTMLButtonElement>(null);
   const installRef = useRef<HTMLButtonElement>(null);
   const shortcutRef = useRef<HTMLButtonElement>(null);
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const openQrModal = useCallback(async () => {
+    setQrActivated(false);
+    setShowQrModal(true);
+    try {
+      await fetch('/api/device-auth/request', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ deviceId }),
+      });
+    } catch {}
+  }, [deviceId]);
+
+  const closeQrModal = useCallback(() => {
+    setShowQrModal(false);
+    if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
+  }, []);
+
+  useEffect(() => {
+    if (!showQrModal || qrActivated) return;
+    pollRef.current = setInterval(async () => {
+      try {
+        const res = await fetch(`/api/device-auth/status/${deviceId}`);
+        const data = await res.json();
+        if (data.status === 'confirmed' && data.token) {
+          clearInterval(pollRef.current!); pollRef.current = null;
+          setQrActivated(true);
+          setTimeout(() => {
+            setToken(data.token, 'user');
+            setLocation('/home');
+          }, 1500);
+        } else if (data.status === 'expired') {
+          clearInterval(pollRef.current!); pollRef.current = null;
+          openQrModal();
+        }
+      } catch {}
+    }, 2000);
+    return () => { if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; } };
+  }, [showQrModal, qrActivated, deviceId, openQrModal, setLocation]);
 
   const loginMutation = useLoginWithCode();
 
@@ -36,6 +110,7 @@ export default function Login() {
   useEffect(() => {
     if (focusZone === 'input') inputRef.current?.focus();
     else if (focusZone === 'submit') submitRef.current?.focus();
+    else if (focusZone === 'qr') qrRef.current?.focus();
     else if (focusZone === 'install') installRef.current?.focus();
     else if (focusZone === 'shortcut') shortcutRef.current?.focus();
   }, [focusZone]);
@@ -104,13 +179,17 @@ export default function Login() {
         case 'ArrowDown':
           e.preventDefault();
           if (focusZone === 'input') setFocusZone('submit');
-          else if (focusZone === 'submit' && showInstallButton) setFocusZone('install');
+          else if (focusZone === 'submit') setFocusZone('qr');
+          else if (focusZone === 'qr' && showInstallButton) setFocusZone('install');
+          else if (focusZone === 'qr') setFocusZone('shortcut');
           else if (focusZone === 'install') setFocusZone('shortcut');
           break;
         case 'ArrowUp':
           e.preventDefault();
-          if (focusZone === 'shortcut') setFocusZone('install');
-          else if (focusZone === 'install') setFocusZone('submit');
+          if (focusZone === 'shortcut' && showInstallButton) setFocusZone('install');
+          else if (focusZone === 'shortcut') setFocusZone('qr');
+          else if (focusZone === 'install') setFocusZone('qr');
+          else if (focusZone === 'qr') setFocusZone('submit');
           else if (focusZone === 'submit') setFocusZone('input');
           break;
         case 'Enter':
@@ -127,6 +206,9 @@ export default function Login() {
           } else if (focusZone === 'submit' && !isTyping) {
             e.preventDefault();
             handleSubmit();
+          } else if (focusZone === 'qr' && !isTyping) {
+            e.preventDefault();
+            openQrModal();
           } else if (focusZone === 'install' && !isTyping) {
             e.preventDefault();
             handleInstall();
@@ -187,6 +269,20 @@ export default function Login() {
           >
             {loginMutation.isPending ? 'Conectando...' : 'Entrar'}
           </Button>
+
+          {isTV && (
+            <Button
+              ref={qrRef}
+              type="button"
+              variant="outline"
+              onFocus={() => setFocusZone('qr')}
+              onClick={openQrModal}
+              className={`w-full py-5 gap-2 border-primary/40 text-primary hover:bg-primary/10 ${focusZone === 'qr' ? focusRing : ''}`}
+            >
+              <QrCode className="w-4 h-4" />
+              Activar por QR o Enlace — desde tu celular
+            </Button>
+          )}
 
           {conflictMessage && (
             <div className="p-4 bg-yellow-500/10 border border-yellow-500/30 rounded-lg text-center animate-in fade-in slide-in-from-bottom-2">
@@ -310,6 +406,56 @@ export default function Login() {
             >
               Entendido
             </button>
+          </div>
+        </div>
+      )}
+
+      {showQrModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4" onClick={closeQrModal}>
+          <div className="bg-card border border-border rounded-2xl p-6 max-w-sm w-full space-y-5 shadow-2xl" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Tv className="w-5 h-5 text-primary" />
+                <h2 className="text-base font-bold">Activar TV desde tu celular</h2>
+              </div>
+              <button onClick={closeQrModal} className="text-muted-foreground hover:text-foreground transition-colors"><X className="w-5 h-5" /></button>
+            </div>
+
+            {qrActivated ? (
+              <div className="flex flex-col items-center gap-3 py-6">
+                <CheckCircle className="w-14 h-14 text-green-400" />
+                <p className="text-lg font-semibold text-center text-white">¡Activado! Entrando...</p>
+              </div>
+            ) : (
+              <>
+                <ol className="space-y-2 text-sm text-muted-foreground">
+                  <li className="flex gap-2"><span className="text-primary font-bold shrink-0">1.</span>Abre la cámara de tu celular y escanea el QR</li>
+                  <li className="flex gap-2"><span className="text-primary font-bold shrink-0">2.</span>Ingresa tu código de acceso en la página que se abre</li>
+                  <li className="flex gap-2"><span className="text-primary font-bold shrink-0">3.</span>Toca <strong className="text-foreground">Activar TV</strong> — el TV se abrirá automáticamente</li>
+                </ol>
+
+                <div className="flex flex-col items-center gap-3">
+                  <div className="bg-white p-3 rounded-xl">
+                    <img
+                      src={`https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodeURIComponent(`${window.location.origin}/activar?d=${deviceId}`)}`}
+                      alt="QR de activación"
+                      className="w-44 h-44"
+                    />
+                  </div>
+                  <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                    <Loader2 className="w-3 h-3 animate-spin" />
+                    Esperando activación...
+                  </div>
+                </div>
+
+                <div className="space-y-1.5">
+                  <p className="text-xs text-muted-foreground text-center">O copia este enlace en tu celular:</p>
+                  <div className="bg-background rounded-lg px-3 py-2 border border-border">
+                    <p className="text-xs text-primary font-mono break-all text-center select-all">{`${window.location.origin}/activar?d=${deviceId}`}</p>
+                  </div>
+                </div>
+              </>
+            )}
           </div>
         </div>
       )}

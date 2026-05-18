@@ -26,7 +26,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '
 import {
   Users, Tv, Film, Key, Package as PackageIcon, LogOut, Plus, Trash2, Pencil,
   Wifi, Loader2, CheckCircle2, XCircle, Clock, Upload, FolderOpen, Copy, GripVertical, ArrowUpDown, Eye, EyeOff, UserCircle2, Settings, RotateCcw, Search, X, Download, Tag,
-  Activity, Signal, AlertTriangle, BarChart2, MonitorPlay, RefreshCw, Tv2, ChevronDown, ChevronRight, Globe
+  Activity, Signal, AlertTriangle, BarChart2, MonitorPlay, RefreshCw, Tv2, ChevronDown, ChevronRight, Globe, Link2, ListVideo, Layers, Youtube, Play
 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import logo from '@assets/imagen_1777670460131.png';
@@ -125,7 +125,7 @@ export default function AdminPanel() {
 
 function AdminDashboard() {
   const queryClient = useQueryClient();
-  const { data: stats, dataUpdatedAt } = useGetAdminStats({ query: { queryKey: getGetAdminStatsQueryKey(), refetchInterval: 30_000 } });
+  const { data: stats, dataUpdatedAt } = useGetAdminStats({ query: { queryKey: getGetAdminStatsQueryKey(), refetchInterval: 120_000 } });
 
   const lastRefreshed = dataUpdatedAt ? new Date(dataUpdatedAt).toLocaleTimeString() : '—';
 
@@ -336,7 +336,7 @@ function WhatsappAlertsSection() {
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const { data, isLoading } = useGetWhatsappAlerts({
-    query: { queryKey: getGetWhatsappAlertsQueryKey(), refetchInterval: 60_000 },
+    query: { queryKey: getGetWhatsappAlertsQueryKey(), refetchInterval: 300_000 },
   });
   const dismissMutation = useDismissWhatsappAlerts();
 
@@ -947,17 +947,22 @@ function SortableCategoryItem({ id, label }: { id: string; label: string }) {
   );
 }
 
-function SortableMovieRow({ mv, onEdit, onDelete }: {
+function SortableMovieRow({ mv, onEdit, onDelete, selected, onToggleSelect }: {
   mv: { id: number; title: string; category?: string | null; filePath: string };
   onEdit: () => void;
   onDelete: () => void;
+  selected?: boolean;
+  onToggleSelect?: () => void;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: mv.id });
   const style = { transform: CSS.Transform.toString(transform), transition, opacity: isDragging ? 0.5 : 1 };
   const publicUrl = `${window.location.origin}/pelicula/${mv.id}`;
   return (
-    <TableRow ref={setNodeRef} style={style}>
-      <TableCell>
+    <TableRow ref={setNodeRef} style={style} className={selected ? 'bg-primary/5' : ''}>
+      <TableCell className="w-8 pr-0 pl-3">
+        <input type="checkbox" className="accent-primary w-4 h-4 cursor-pointer" checked={!!selected} onChange={onToggleSelect} onClick={e => e.stopPropagation()} />
+      </TableCell>
+      <TableCell className="w-8 pl-0 pr-0">
         <button {...attributes} {...listeners} className="cursor-grab active:cursor-grabbing text-muted-foreground hover:text-foreground p-1 touch-none">
           <GripVertical className="w-4 h-4" />
         </button>
@@ -1275,6 +1280,7 @@ function ChannelsManager() {
   };
 
   const csvFileRef = useRef<HTMLInputElement>(null);
+  const m3uFileRef = useRef<HTMLInputElement>(null);
   const urlsFileRef = useRef<HTMLInputElement>(null);
 
   const handleCsvFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -1512,7 +1518,7 @@ function ChannelsManager() {
         <div className="rounded-lg border border-primary/40 bg-primary/5 p-4 space-y-3">
           <div className="flex items-center gap-2">
             <Tag className="w-4 h-4 text-primary" />
-            <p className="text-sm font-medium text-primary">Orden de categorías en el carrusel</p>
+            <p className="text-sm font-medium text-primary">Orden de categorías de canales</p>
             <span className="text-xs text-muted-foreground ml-auto">Arrastra para reordenar</span>
           </div>
           {catOrder.length === 0 ? (
@@ -1655,7 +1661,17 @@ function ChannelsManager() {
             {/* M3U Tab */}
             {importTab === 'm3u' && (
               <div className="space-y-3">
-                <p className="text-sm text-muted-foreground">Pega el contenido de tu lista M3U o M3U8:</p>
+                <div className="flex items-center justify-between gap-2">
+                  <p className="text-sm text-muted-foreground flex-1">Pega el contenido de tu lista M3U o M3U8, o sube el archivo directamente:</p>
+                  <Button size="sm" variant="ghost" className="text-xs shrink-0" onClick={() => m3uFileRef.current?.click()}>
+                    <FolderOpen className="w-3 h-3 mr-1" />Subir .m3u
+                  </Button>
+                  <input ref={m3uFileRef} type="file" accept=".m3u,.m3u8,.txt" className="hidden" onChange={async e => {
+                    const f = e.target.files?.[0]; if (!f) return;
+                    setImportContent(await f.text());
+                    e.target.value = '';
+                  }} />
+                </div>
                 <Textarea
                   rows={10}
                   placeholder={'#EXTM3U\n#EXTINF:-1 group-title="Noticias" tvg-logo="https://logo.com/cnn.png",CNN\nhttp://ejemplo.com/cnn.m3u8\n#EXTINF:-1 group-title="Deportes",ESPN\nhttp://ejemplo.com/espn.m3u8'}
@@ -1883,6 +1899,509 @@ type DetectedMovie = {
   uploadProgress?: number;
 };
 
+type SmartItem = { name: string; url: string; poster?: string; size?: number; season?: number; episode?: number; folderName?: string; };
+type SmartSeriesGroup = { title: string; folderUrl: string; poster?: string; items: SmartItem[]; seasons: Record<string, SmartItem[]>; };
+type SmartAnalyzeResult = {
+  source: 'terabox' | 'http';
+  type: 'movie' | 'series' | 'multi-series';
+  title: string;
+  items: SmartItem[];
+  seasons?: Record<string, SmartItem[]>;
+  seriesGroups?: SmartSeriesGroup[];
+  poster?: string;
+  totalFiles: number;
+  hasFolders: boolean;
+  folderCount: number;
+};
+
+function detectUrlSource(url: string): { label: string; color: string; supported: boolean; hint?: string } | null {
+  if (!url.trim()) return null;
+  const u = url.trim().toLowerCase();
+  if (/terabox\.com\/s\/|1024terabox\.com\/s\/|1024tera\.com\/s\/|terabox\.app\/s\/|freeterabox\.com\/s\//.test(u))
+    return { label: '📦 Terabox', color: 'text-blue-400 bg-blue-500/10 border-blue-500/30', supported: true, hint: 'Requiere cookies configuradas en Ajustes' };
+  if (/mega\.nz|mega\.co\.nz/.test(u))
+    return { label: '🔒 MEGA', color: 'text-red-400 bg-red-500/10 border-red-500/30', supported: false, hint: 'No compatible — usa URLs directas en modo Manual' };
+  if (/drive\.google\.com|docs\.google\.com/.test(u))
+    return { label: '🔒 Google Drive', color: 'text-red-400 bg-red-500/10 border-red-500/30', supported: false, hint: 'No compatible — usa URLs directas en modo Manual' };
+  if (/dropbox\.com\//.test(u)) {
+    const clean = u.split('?')[0];
+    const ext = clean.split('.').pop() ?? '';
+    const videoExts = new Set(['mp4','mkv','avi','mov','webm','ts','flv','wmv','mpg','m4v','divx','3gp']);
+    if (videoExts.has(ext))
+      return { label: '📂 Dropbox (archivo)', color: 'text-green-400 bg-green-500/10 border-green-500/30', supported: true, hint: 'Se convierte automáticamente a enlace directo' };
+    return { label: '📂 Dropbox (carpeta)', color: 'text-yellow-400 bg-yellow-500/10 border-yellow-500/30', supported: false, hint: 'Solo funciona con archivos individuales de Dropbox' };
+  }
+  const videoExts = new Set(['mp4','mkv','avi','mov','webm','ts','flv','wmv','mpg','m4v','divx','3gp','ogv']);
+  const ext = u.split('?')[0].split('.').pop() ?? '';
+  if (videoExts.has(ext))
+    return { label: '🎬 Video directo', color: 'text-green-400 bg-green-500/10 border-green-500/30', supported: true, hint: 'URL directa de video — compatible' };
+  if (/^https?:\/\//.test(u))
+    return { label: '🌐 HTTP / Carpeta', color: 'text-green-400 bg-green-500/10 border-green-500/30', supported: true, hint: 'Directorio HTTP — se leerán todos los archivos automáticamente' };
+  return null;
+}
+
+function SmartLinkImport({ open, onClose, onImported }: {
+  open: boolean;
+  onClose: () => void;
+  onImported: (type: string) => void;
+}) {
+  const { toast } = useToast();
+  const [mode, setMode] = useState<'auto' | 'manual'>('auto');
+  const [url, setUrl] = useState('');
+  const [analyzing, setAnalyzing] = useState(false);
+  const [importing, setImporting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [result, setResult] = useState<SmartAnalyzeResult | null>(null);
+  const [importTitle, setImportTitle] = useState('');
+  const [importType, setImportType] = useState<'movie' | 'series' | 'multi-series'>('movie');
+  const [category, setCategory] = useState('');
+  const [selectedGroups, setSelectedGroups] = useState<Set<number>>(new Set());
+  // TMDB metadata state
+  const [tmdbMeta, setTmdbMeta] = useState<{ poster?: string|null; banner?: string|null; year?: number|null; genre?: string|null; description?: string|null; title?: string|null } | null>(null);
+  const [tmdbLoading, setTmdbLoading] = useState(false);
+  const [importPoster, setImportPoster] = useState('');
+  const [importYear, setImportYear] = useState<string>('');
+  const [importGenre, setImportGenre] = useState('');
+  const [importDescription, setImportDescription] = useState('');
+  // Manual mode state
+  const [manualTitle, setManualTitle] = useState('');
+  const [manualCategory, setManualCategory] = useState('');
+  const [manualType, setManualType] = useState<'movie' | 'series'>('movie');
+  const [manualUrls, setManualUrls] = useState('');
+
+  const fetchTmdbMeta = async (title: string, type: 'movie' | 'series' | 'multi-series') => {
+    if (!title.trim()) return;
+    const endpoint = type === 'movie' ? `/api/movies/search-poster?q=${encodeURIComponent(title)}` : `/api/series/poster-search?q=${encodeURIComponent(title)}`;
+    setTmdbLoading(true);
+    try {
+      const token = getToken('admin');
+      const r = await fetch(`${BASE_URL}${endpoint}`, { headers: { Authorization: `Bearer ${token}` } });
+      if (r.ok) {
+        const d = await r.json();
+        if (d.poster || d.description || d.year || d.genre) {
+          setTmdbMeta(d);
+          if (d.poster) setImportPoster(d.poster);
+          if (d.year) setImportYear(String(d.year));
+          if (d.genre) setImportGenre(d.genre);
+          if (d.description) setImportDescription(d.description);
+        } else {
+          setTmdbMeta(null);
+        }
+      }
+    } catch {}
+    setTmdbLoading(false);
+  };
+
+  const reset = () => {
+    setUrl(''); setResult(null); setError(null); setImportTitle(''); setCategory(''); setSelectedGroups(new Set());
+    setTmdbMeta(null); setImportPoster(''); setImportYear(''); setImportGenre(''); setImportDescription('');
+    setManualTitle(''); setManualCategory(''); setManualUrls(''); setManualType('movie');
+  };
+
+  const handleClose = () => { reset(); setMode('auto'); onClose(); };
+
+  const handleAnalyze = async () => {
+    if (!url.trim()) return;
+    setAnalyzing(true); setError(null); setResult(null);
+    try {
+      const token = getToken('admin');
+      const r = await fetch(`${BASE_URL}/api/smart-import/analyze`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ url: url.trim() }),
+      });
+      const data = await r.json();
+      if (!r.ok) throw new Error(data.error || 'Error al analizar');
+      setResult(data);
+      setImportTitle(data.title || '');
+      setImportType(data.type);
+      if (data.seriesGroups) {
+        setSelectedGroups(new Set(data.seriesGroups.map((_: SmartSeriesGroup, i: number) => i)));
+      }
+      // Auto-fetch TMDB metadata for single movie or series
+      if (data.type !== 'multi-series' && data.title) {
+        fetchTmdbMeta(data.title, data.type);
+      }
+    } catch (err: any) {
+      setError(err?.message || 'No se pudo analizar el enlace');
+    }
+    setAnalyzing(false);
+  };
+
+  const handleImport = async () => {
+    if (!result) return;
+    setImporting(true);
+    try {
+      const token = getToken('admin');
+      const body: Record<string, unknown> = {
+        type: importType, title: importTitle || result.title,
+        category: category || undefined,
+        poster: importPoster || result.poster || undefined,
+        year: importYear ? Number(importYear) : undefined,
+        genre: importGenre || undefined,
+        description: importDescription || undefined,
+        items: result.items, seasons: result.seasons,
+      };
+      if (importType === 'multi-series' && result.seriesGroups) {
+        body.seriesGroups = result.seriesGroups.filter((_: SmartSeriesGroup, i: number) => selectedGroups.has(i));
+      }
+      const r = await fetch(`${BASE_URL}/api/smart-import/import`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify(body),
+      });
+      const data = await r.json();
+      if (!r.ok) throw new Error(data.error || 'Error al importar');
+      const count = data.count || data.episodes || 1;
+      const label = importType === 'movie' ? `${count} película(s)` : importType === 'multi-series' ? `${count} serie(s)` : `serie con ${data.episodes || 0} episodio(s)`;
+      toast({ title: `Importado correctamente`, description: `Se importaron ${label}` });
+      onImported(importType); handleClose();
+    } catch (err: any) {
+      toast({ variant: 'destructive', title: 'Error al importar', description: err?.message || '' });
+    }
+    setImporting(false);
+  };
+
+  const handleManualImport = async () => {
+    const lines = manualUrls.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+    if (!lines.length) { toast({ variant: 'destructive', title: 'Sin URLs', description: 'Pega al menos una URL de video' }); return; }
+    if (!manualTitle.trim()) { toast({ variant: 'destructive', title: 'Falta título', description: 'Escribe un título' }); return; }
+    setImporting(true);
+    try {
+      const token = getToken('admin');
+      const items = lines.map((u, i) => {
+        const name = u.split('/').pop()?.replace(/\.[^.]+$/, '').replace(/[._\-]+/g, ' ').trim() || `Item ${i + 1}`;
+        return manualType === 'series'
+          ? { name, url: u, season: 1, episode: i + 1 }
+          : { name, url: u };
+      });
+      const r = await fetch(`${BASE_URL}/api/smart-import/import`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ type: manualType, title: manualTitle.trim(), category: manualCategory || undefined, items }),
+      });
+      const data = await r.json();
+      if (!r.ok) throw new Error(data.error || 'Error al importar');
+      const label = manualType === 'movie' ? `${items.length} película(s)` : `serie con ${items.length} episodio(s)`;
+      toast({ title: 'Importado correctamente', description: `Se importaron ${label}` });
+      onImported(manualType); handleClose();
+    } catch (err: any) {
+      toast({ variant: 'destructive', title: 'Error al importar', description: err?.message || '' });
+    }
+    setImporting(false);
+  };
+
+  const typeLabel = (t: string) => t === 'movie' ? '🎬 Películas' : t === 'series' ? '📺 Serie' : '📁 Múltiples Series';
+  const typeBadgeClass = (t: string) => t === 'movie' ? 'bg-blue-500/20 text-blue-400' : t === 'series' ? 'bg-purple-500/20 text-purple-400' : 'bg-orange-500/20 text-orange-400';
+  const manualUrlLines = manualUrls.split('\n').filter(l => l.trim().length > 0);
+
+  return (
+    <Dialog open={open} onOpenChange={o => !o && handleClose()}>
+      <DialogContent className="bg-card border-border max-w-3xl max-h-[90vh] flex flex-col">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <Link2 className="w-5 h-5 text-primary" /> Importar desde enlace
+          </DialogTitle>
+        </DialogHeader>
+
+        {/* Mode tabs */}
+        <div className="flex gap-1 bg-secondary/30 rounded-lg p-1 flex-shrink-0">
+          <button onClick={() => setMode('auto')}
+            className={`flex-1 text-xs py-1.5 rounded-md transition-colors font-medium ${mode === 'auto' ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}>
+            Automático
+          </button>
+          <button onClick={() => setMode('manual')}
+            className={`flex-1 text-xs py-1.5 rounded-md transition-colors font-medium ${mode === 'manual' ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}>
+            Manual (URLs directas)
+          </button>
+        </div>
+
+        <div className="space-y-4 flex-1 overflow-y-auto pr-1">
+
+          {/* ── AUTO MODE ── */}
+          {mode === 'auto' && (
+            <div className="space-y-3">
+              <div className="rounded-lg border border-border bg-secondary/20 p-3 space-y-1.5">
+                <p className="text-xs font-medium text-foreground">Servicios compatibles:</p>
+                <div className="flex flex-wrap gap-1.5">
+                  <span className="text-[10px] px-2 py-0.5 rounded border bg-green-500/10 border-green-500/30 text-green-400">✅ Terabox (carpeta)</span>
+                  <span className="text-[10px] px-2 py-0.5 rounded border bg-green-500/10 border-green-500/30 text-green-400">✅ Carpeta HTTP</span>
+                  <span className="text-[10px] px-2 py-0.5 rounded border bg-green-500/10 border-green-500/30 text-green-400">✅ Video directo (.mp4 .mkv…)</span>
+                  <span className="text-[10px] px-2 py-0.5 rounded border bg-green-500/10 border-green-500/30 text-green-400">✅ Dropbox (archivo)</span>
+                  <span className="text-[10px] px-2 py-0.5 rounded border bg-red-500/10 border-red-500/30 text-red-400">❌ MEGA</span>
+                  <span className="text-[10px] px-2 py-0.5 rounded border bg-red-500/10 border-red-500/30 text-red-400">❌ Google Drive</span>
+                </div>
+              </div>
+              <div className="flex gap-2">
+                <Input
+                  value={url}
+                  onChange={e => { setUrl(e.target.value); setResult(null); setError(null); }}
+                  placeholder="https://1024terabox.com/s/... o https://servidor.com/peliculas/ o URL directa .mp4"
+                  className="bg-background flex-1 font-mono text-xs"
+                  onKeyDown={e => e.key === 'Enter' && !analyzing && handleAnalyze()}
+                />
+                <Button onClick={handleAnalyze} disabled={analyzing || !url.trim() || !(detectUrlSource(url)?.supported ?? true)} className="flex-shrink-0">
+                  {analyzing ? <Loader2 className="w-4 h-4 animate-spin mr-1" /> : <Search className="w-4 h-4 mr-1" />}
+                  {analyzing ? 'Leyendo...' : 'Analizar'}
+                </Button>
+              </div>
+
+              {/* Real-time URL source detection badge */}
+              {url.trim() && (() => {
+                const src = detectUrlSource(url);
+                if (!src) return null;
+                return (
+                  <div className={`flex items-center gap-2 text-xs px-3 py-2 rounded-lg border ${src.color}`}>
+                    <span className="font-semibold">{src.label}</span>
+                    {src.hint && <span className="opacity-70">— {src.hint}</span>}
+                    {!src.supported && (
+                      <Button size="sm" variant="ghost" className="ml-auto h-6 text-xs px-2 py-0" onClick={() => { setMode('manual'); }}>
+                        Ir a Manual →
+                      </Button>
+                    )}
+                  </div>
+                );
+              })()}
+
+              {error && (
+                <div className="rounded-lg border border-destructive/40 bg-destructive/10 p-3 space-y-2">
+                  <div className="flex items-start gap-2 text-sm text-destructive">
+                    <XCircle className="w-4 h-4 flex-shrink-0 mt-0.5" />
+                    <p className="leading-snug whitespace-pre-line">{error}</p>
+                  </div>
+                  {/terabox|Terabox/i.test(error) && (
+                    <div className="pt-1 border-t border-destructive/20">
+                      <p className="text-xs text-muted-foreground mb-2">Configura las cookies de Terabox en Admin → Configuración, o pega las URLs manualmente:</p>
+                      <Button size="sm" variant="outline" onClick={() => setMode('manual')} className="h-7 text-xs">
+                        Cambiar a modo manual
+                      </Button>
+                    </div>
+                  )}
+                  {/manual/i.test(error) && !result && (
+                    <div className="pt-1 border-t border-destructive/20">
+                      <Button size="sm" variant="outline" onClick={() => setMode('manual')} className="h-7 text-xs">
+                        Ir a modo Manual →
+                      </Button>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {result && (
+                <div className="space-y-4">
+                  <div className="flex items-center gap-3 flex-wrap">
+                    <span className={`text-xs font-bold px-2 py-1 rounded ${typeBadgeClass(result.type)}`}>{typeLabel(result.type)}</span>
+                    <span className="text-xs text-muted-foreground">{result.totalFiles} archivo(s) · fuente: {result.source}</span>
+                    <div className="flex gap-1 ml-auto">
+                      {(['movie', 'series', 'multi-series'] as const).map(t => (
+                        <button key={t} onClick={() => setImportType(t)}
+                          className={`text-xs px-2 py-1 rounded border transition-colors ${importType === t ? 'border-primary bg-primary/10 text-primary' : 'border-border text-muted-foreground hover:border-primary/50'}`}>
+                          {t === 'movie' ? 'Película' : t === 'series' ? 'Serie' : 'Multi-serie'}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {importType !== 'multi-series' && (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div className="space-y-1">
+                        <label className="text-xs text-muted-foreground">Título</label>
+                        <Input value={importTitle} onChange={e => setImportTitle(e.target.value)} className="bg-background" placeholder="Título..." />
+                      </div>
+                      <div className="space-y-1">
+                        <label className="text-xs text-muted-foreground">Categoría (opcional)</label>
+                        <Input value={category} onChange={e => setCategory(e.target.value)} className="bg-background" placeholder="Acción, Drama..." />
+                      </div>
+                    </div>
+                  )}
+
+                  {importType === 'movie' && (
+                    <div className="border border-border rounded-lg overflow-hidden">
+                      <div className="px-3 py-2 bg-secondary/30 flex items-center gap-2">
+                        <Film className="w-3.5 h-3.5 text-primary" />
+                        <span className="text-xs font-medium">{result.items.length} película(s)</span>
+                      </div>
+                      <div className="max-h-64 overflow-y-auto divide-y divide-border">
+                        {result.items.map((item, i) => (
+                          <div key={i} className="flex items-center gap-2 px-3 py-2">
+                            <div className="w-7 h-10 flex-shrink-0 rounded bg-muted overflow-hidden flex items-center justify-center">
+                              {item.poster ? <img src={item.poster} alt="" className="w-full h-full object-cover" onError={e => { (e.target as HTMLImageElement).style.display='none'; }} /> : <Film className="w-3.5 h-3.5 text-muted-foreground/40" />}
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <p className="text-xs font-medium truncate">{item.name}</p>
+                              {item.size && <p className="text-[10px] text-muted-foreground">{(item.size / 1024 / 1024 / 1024).toFixed(2)} GB</p>}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {importType === 'series' && result.seasons && Object.keys(result.seasons).length > 0 && (
+                    <div className="border border-border rounded-lg overflow-hidden">
+                      <div className="px-3 py-2 bg-secondary/30 flex items-center gap-2">
+                        <Layers className="w-3.5 h-3.5 text-primary" />
+                        <span className="text-xs font-medium">{Object.keys(result.seasons).length} temporada(s) · {result.items.length} episodio(s)</span>
+                      </div>
+                      <div className="max-h-64 overflow-y-auto divide-y divide-border">
+                        {Object.entries(result.seasons).map(([sNum, eps]) => (
+                          <div key={sNum}>
+                            <div className="px-3 py-1.5 bg-muted/30 flex items-center gap-2">
+                              <ListVideo className="w-3 h-3 text-primary/70" />
+                              <span className="text-xs font-semibold">Temporada {sNum}</span>
+                              <span className="text-[10px] text-muted-foreground">{(eps as SmartItem[]).length} ep.</span>
+                            </div>
+                            {(eps as SmartItem[]).slice(0, 5).map((ep, ei) => (
+                              <div key={ei} className="flex items-center gap-2 px-4 py-1.5">
+                                <span className="text-[10px] text-muted-foreground w-5">E{ep.episode ?? (ei + 1)}</span>
+                                <p className="text-xs truncate flex-1">{ep.name}</p>
+                              </div>
+                            ))}
+                            {(eps as SmartItem[]).length > 5 && <p className="text-[10px] text-muted-foreground px-4 pb-1.5">...y {(eps as SmartItem[]).length - 5} más</p>}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {importType === 'series' && !result.seasons && (
+                    <div className="border border-border rounded-lg overflow-hidden">
+                      <div className="px-3 py-2 bg-secondary/30 flex items-center gap-2">
+                        <ListVideo className="w-3.5 h-3.5 text-primary" />
+                        <span className="text-xs font-medium">{result.items.length} episodio(s)</span>
+                      </div>
+                      <div className="max-h-48 overflow-y-auto divide-y divide-border">
+                        {result.items.map((item, i) => (
+                          <div key={i} className="flex items-center gap-2 px-3 py-2">
+                            <span className="text-[10px] text-muted-foreground w-5">{i + 1}</span>
+                            <p className="text-xs truncate flex-1">{item.name}</p>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {importType === 'multi-series' && result.seriesGroups && (
+                    <div className="border border-border rounded-lg overflow-hidden">
+                      <div className="px-3 py-2 bg-secondary/30 flex items-center gap-2">
+                        <Tv2 className="w-3.5 h-3.5 text-primary" />
+                        <span className="text-xs font-medium">{result.seriesGroups.length} serie(s) detectada(s)</span>
+                        <button className="ml-auto text-[10px] text-primary hover:underline" onClick={() => setSelectedGroups(new Set(result.seriesGroups!.map((_, i) => i)))}>Todas</button>
+                        <button className="text-[10px] text-muted-foreground hover:underline" onClick={() => setSelectedGroups(new Set())}>Ninguna</button>
+                      </div>
+                      <div className="max-h-72 overflow-y-auto divide-y divide-border">
+                        {result.seriesGroups.map((group, gi) => (
+                          <div key={gi} className={`flex items-center gap-3 px-3 py-2 transition-colors ${selectedGroups.has(gi) ? '' : 'opacity-40'}`}>
+                            <input type="checkbox" className="accent-primary" checked={selectedGroups.has(gi)}
+                              onChange={e => { const s = new Set(selectedGroups); e.target.checked ? s.add(gi) : s.delete(gi); setSelectedGroups(s); }} />
+                            <div className="w-7 h-10 flex-shrink-0 rounded bg-muted overflow-hidden flex items-center justify-center">
+                              {group.poster ? <img src={group.poster} alt="" className="w-full h-full object-cover" onError={e => { (e.target as HTMLImageElement).style.display='none'; }} /> : <Tv2 className="w-3.5 h-3.5 text-muted-foreground/40" />}
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <p className="text-xs font-medium truncate">{group.title}</p>
+                              <p className="text-[10px] text-muted-foreground">{group.items.length} ep. · {Object.keys(group.seasons).length} temp.</p>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                      <div className="px-3 py-2 bg-secondary/10">
+                        <label className="text-xs text-muted-foreground block mb-1">Categoría para todas (opcional)</label>
+                        <Input value={category} onChange={e => setCategory(e.target.value)} className="bg-background h-8 text-xs" placeholder="Drama, Acción..." />
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* ── MANUAL MODE ── */}
+          {mode === 'manual' && (
+            <div className="space-y-3">
+              <p className="text-xs text-muted-foreground">
+                Pega las URLs directas de video, una por línea. Ideal para Terabox y otros servicios que requieren autenticación para escaneo automático.
+              </p>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <label className="text-xs text-muted-foreground">Título *</label>
+                  <Input value={manualTitle} onChange={e => setManualTitle(e.target.value)} className="bg-background" placeholder="Nombre de la película o serie..." />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-xs text-muted-foreground">Categoría (opcional)</label>
+                  <Input value={manualCategory} onChange={e => setManualCategory(e.target.value)} className="bg-background" placeholder="Acción, Drama..." />
+                </div>
+              </div>
+
+              <div className="flex gap-1 text-xs">
+                <button onClick={() => setManualType('movie')}
+                  className={`px-3 py-1.5 rounded border transition-colors ${manualType === 'movie' ? 'border-primary bg-primary/10 text-primary' : 'border-border text-muted-foreground hover:border-primary/50'}`}>
+                  🎬 Película(s)
+                </button>
+                <button onClick={() => setManualType('series')}
+                  className={`px-3 py-1.5 rounded border transition-colors ${manualType === 'series' ? 'border-primary bg-primary/10 text-primary' : 'border-border text-muted-foreground hover:border-primary/50'}`}>
+                  📺 Serie (episodios)
+                </button>
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-xs text-muted-foreground flex items-center justify-between">
+                  <span>URLs de video — una por línea</span>
+                  {manualUrlLines.length > 0 && <span className="text-primary font-medium">{manualUrlLines.length} URL(s)</span>}
+                </label>
+                <textarea
+                  value={manualUrls}
+                  onChange={e => setManualUrls(e.target.value)}
+                  rows={8}
+                  placeholder={"https://ejemplo.com/video1.mp4\nhttps://ejemplo.com/video2.mp4\nhttps://..."}
+                  className="w-full rounded-md border border-input bg-background px-3 py-2 text-xs font-mono resize-y min-h-[140px] focus:outline-none focus:ring-1 focus:ring-ring placeholder:text-muted-foreground"
+                />
+              </div>
+
+              {manualUrlLines.length > 0 && (
+                <div className="border border-border rounded-lg overflow-hidden">
+                  <div className="px-3 py-2 bg-secondary/30 flex items-center gap-2">
+                    {manualType === 'movie' ? <Film className="w-3.5 h-3.5 text-primary" /> : <ListVideo className="w-3.5 h-3.5 text-primary" />}
+                    <span className="text-xs font-medium">
+                      {manualType === 'movie' ? `${manualUrlLines.length} película(s)` : `${manualUrlLines.length} episodio(s) → Temporada 1`}
+                    </span>
+                  </div>
+                  <div className="max-h-48 overflow-y-auto divide-y divide-border">
+                    {manualUrlLines.slice(0, 20).map((u, i) => {
+                      const name = u.split('/').pop()?.replace(/\.[^.]+$/, '').replace(/[._\-]+/g, ' ').trim() || u;
+                      return (
+                        <div key={i} className="flex items-center gap-2 px-3 py-1.5">
+                          {manualType === 'series' && <span className="text-[10px] text-muted-foreground w-6 flex-shrink-0">E{i + 1}</span>}
+                          <p className="text-xs truncate flex-1 text-muted-foreground" title={u}>{name}</p>
+                        </div>
+                      );
+                    })}
+                    {manualUrlLines.length > 20 && <p className="text-[10px] text-muted-foreground px-3 py-1.5">...y {manualUrlLines.length - 20} más</p>}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
+        <DialogFooter className="gap-2 mt-4 flex-shrink-0">
+          <Button variant="outline" onClick={handleClose} disabled={importing}>Cancelar</Button>
+          {mode === 'auto' && result && (
+            <Button onClick={handleImport} disabled={importing || (importType === 'multi-series' && selectedGroups.size === 0)}>
+              {importing ? <><Loader2 className="w-4 h-4 animate-spin mr-2" />Importando...</> : <><Download className="w-4 h-4 mr-2" />Importar</>}
+            </Button>
+          )}
+          {mode === 'manual' && (
+            <Button onClick={handleManualImport} disabled={importing || !manualTitle.trim() || manualUrlLines.length === 0}>
+              {importing ? <><Loader2 className="w-4 h-4 animate-spin mr-2" />Importando...</> : <><Download className="w-4 h-4 mr-2" />Importar {manualUrlLines.length > 0 ? `(${manualUrlLines.length})` : ''}</>}
+            </Button>
+          )}
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 function MoviesManager() {
   const qc = useQueryClient();
   const { toast } = useToast();
@@ -1892,15 +2411,366 @@ function MoviesManager() {
   const deleteMutation = useDeleteMovie();
 
   const [showForm, setShowForm] = useState(false);
-  const [newMv, setNewMv] = useState({ title: '', filePath: '', category: '', description: '', poster: '' });
-  const [editMv, setEditMv] = useState<{ id: number; title: string; filePath: string; category: string; description: string; poster: string } | null>(null);
+  const [selectedMovieIds, setSelectedMovieIds] = useState<Set<number>>(new Set());
+  const [newMv, setNewMv] = useState({ title: '', filePath: '', videoFormat: '', category: '', description: '', poster: '' });
+  const [editMv, setEditMv] = useState<{ id: number; title: string; filePath: string; videoFormat: string; category: string; description: string; poster: string } | null>(null);
+  const [detectingFormat, setDetectingFormat] = useState(false);
+
+  const autoDetectFormat = async (url: string, target: 'new' | 'edit') => {
+    if (!url) return;
+    setDetectingFormat(true);
+    try {
+      const token = getToken('admin');
+      const r = await fetch(`${BASE_URL}/api/detect-format`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ url }),
+      });
+      if (r.ok) {
+        const { format } = await r.json();
+        if (target === 'new') setNewMv(p => ({ ...p, videoFormat: format }));
+        else setEditMv(p => p ? { ...p, videoFormat: format } : p);
+      }
+    } catch { /* ignore */ } finally {
+      setDetectingFormat(false);
+    }
+  };
   const [sortMode, setSortMode] = useState(false);
   const [sortedIds, setSortedIds] = useState<number[]>([]);
   const [saving, setSaving] = useState(false);
   const [showFolderPreview, setShowFolderPreview] = useState(false);
   const [detectedMovies, setDetectedMovies] = useState<DetectedMovie[]>([]);
   const [importing, setImporting] = useState(false);
+  const [showSmartImport, setShowSmartImport] = useState(false);
   const folderRef = useRef<HTMLInputElement>(null);
+
+  // Archive.org browser state
+  const [showArchive, setShowArchive] = useState(false);
+  const [archiveQuery, setArchiveQuery] = useState('');
+  const [archiveResults, setArchiveResults] = useState<{ identifier: string; title: string; description?: string; year?: string | number; creator?: string; subject?: string }[]>([]);
+  const [archiveLoading, setArchiveLoading] = useState(false);
+  const [archiveError, setArchiveError] = useState('');
+  const [archivePage, setArchivePage] = useState(1);
+  const [archiveCategory, setArchiveCategory] = useState('');
+  const [archiveLang, setArchiveLang] = useState('');
+  const [archiveImporting, setArchiveImporting] = useState<Set<string>>(new Set());
+  const [archiveImported, setArchiveImported] = useState<Set<string>>(new Set());
+
+  // YouTube browser state
+  const [showYoutube, setShowYoutube] = useState(false);
+  const [youtubeQuery, setYoutubeQuery] = useState('');
+  const [youtubeResults, setYoutubeResults] = useState<{ videoId: string; title: string; description?: string; year?: string; thumbnail: string; channel: string; duration?: string; url: string }[]>([]);
+  const [youtubeLoading, setYoutubeLoading] = useState(false);
+  const [youtubeError, setYoutubeError] = useState('');
+  const [youtubeNextToken, setYoutubeNextToken] = useState('');
+  const [youtubePrevTokens, setYoutubePrevTokens] = useState<string[]>([]);
+  const [youtubePage, setYoutubePage] = useState(1);
+  const [youtubeCategory, setYoutubeCategory] = useState('');
+  const [youtubeLang, setYoutubeLang] = useState('');
+  const [youtubeType, setYoutubeType] = useState('movie');
+  const [youtubeImporting, setYoutubeImporting] = useState<Set<string>>(new Set());
+  const [youtubeImported, setYoutubeImported] = useState<Set<string>>(new Set());
+  const [youtubeNeedsKey, setYoutubeNeedsKey] = useState(false);
+
+  // YouTube URL import (single video → movie)
+  const [showYtUrl, setShowYtUrl] = useState(false);
+  const [ytUrlInput, setYtUrlInput] = useState('');
+  const [ytUrlLoading, setYtUrlLoading] = useState(false);
+  const [ytUrlError, setYtUrlError] = useState('');
+  const [ytUrlPreview, setYtUrlPreview] = useState<{ videoId: string; title: string; thumbnail: string; thumbnailHQ: string; channel: string; description: string | null; year: string | null; url: string } | null>(null);
+  const [ytUrlCategory, setYtUrlCategory] = useState('');
+  const [ytUrlImporting, setYtUrlImporting] = useState(false);
+  const [ytUrlImported, setYtUrlImported] = useState(false);
+  // YouTube Bulk URL Import
+  const [showYtBulkImport, setShowYtBulkImport] = useState(false);
+  const [ytBulkText, setYtBulkText] = useState('');
+  const [ytBulkCategory, setYtBulkCategory] = useState('');
+  const [ytBulkDetected, setYtBulkDetected] = useState<Array<{ url: string; videoId: string; title: string; thumbnail: string; status: 'pending' | 'ok' | 'error' }>>([]);
+  const [ytBulkDetecting, setYtBulkDetecting] = useState(false);
+  const [ytBulkImportingAll, setYtBulkImportingAll] = useState(false);
+  const [ytBulkResults, setYtBulkResults] = useState<{ ok: number; fail: number } | null>(null);
+
+  const fetchYtUrlInfo = async (url: string) => {
+    if (!url.trim()) return;
+    setYtUrlLoading(true); setYtUrlError(''); setYtUrlPreview(null); setYtUrlImported(false);
+    try {
+      const token = getToken('admin');
+      const r = await fetch(`${BASE_URL}/api/youtube/video-info?url=${encodeURIComponent(url.trim())}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const data = await r.json();
+      if (!r.ok) throw new Error(data.error || 'Error al obtener info del video');
+      setYtUrlPreview(data);
+    } catch (e: any) { setYtUrlError(e.message); }
+    finally { setYtUrlLoading(false); }
+  };
+
+  const importYtUrl = async () => {
+    if (!ytUrlPreview) return;
+    setYtUrlImporting(true);
+    try {
+      const token = getToken('admin');
+      const r = await fetch(`${BASE_URL}/api/youtube/import`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({
+          videoId: ytUrlPreview.videoId,
+          title: ytUrlPreview.title,
+          description: ytUrlPreview.description,
+          year: ytUrlPreview.year,
+          thumbnail: ytUrlPreview.thumbnailHQ || ytUrlPreview.thumbnail,
+          category: ytUrlCategory || undefined,
+        }),
+      });
+      const data = await r.json();
+      if (!r.ok) throw new Error(data.error || 'Error al importar');
+      setYtUrlImported(true);
+      setYtUrlPreview(null); setYtUrlInput(''); setYtUrlCategory('');
+    } catch (e: any) { setYtUrlError(e.message); }
+    finally { setYtUrlImporting(false); }
+  };
+
+  const extractYtVideoId = (url: string): string | null => {
+    try {
+      const u = new URL(url.trim());
+      if (u.hostname.includes('youtu.be')) return u.pathname.slice(1).split('?')[0];
+      if (u.hostname.includes('youtube.com')) {
+        if (u.pathname === '/watch') return u.searchParams.get('v');
+        const m = u.pathname.match(/\/(?:embed|v|shorts)\/([^/?]+)/);
+        if (m) return m[1];
+      }
+    } catch {}
+    return null;
+  };
+
+  const handleYtBulkDetect = async () => {
+    const urls = ytBulkText.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+    if (!urls.length) { toast({ variant: 'destructive', title: 'Pega al menos una URL de YouTube' }); return; }
+    setYtBulkDetecting(true);
+    setYtBulkResults(null);
+    const detected: Array<{ url: string; videoId: string; title: string; thumbnail: string; status: 'pending' | 'ok' | 'error' }> = [];
+    for (const url of urls) {
+      const videoId = extractYtVideoId(url);
+      if (!videoId) { detected.push({ url, videoId: '', title: url, thumbnail: '', status: 'error' }); continue; }
+      try {
+        const token = getToken('admin');
+        const r = await fetch(`${BASE_URL}/api/youtube/video-info?url=${encodeURIComponent(url)}`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (r.ok) {
+          const d = await r.json();
+          detected.push({ url, videoId: d.videoId || videoId, title: d.title || url, thumbnail: d.thumbnailHQ || d.thumbnail || `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`, status: 'ok' });
+        } else {
+          detected.push({ url, videoId, title: `Video ${videoId}`, thumbnail: `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`, status: 'ok' });
+        }
+      } catch {
+        detected.push({ url, videoId, title: `Video ${videoId}`, thumbnail: `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`, status: 'ok' });
+      }
+    }
+    setYtBulkDetected(detected);
+    setYtBulkDetecting(false);
+  };
+
+  const handleYtBulkImportAll = async () => {
+    const toImport = ytBulkDetected.filter(d => d.status === 'ok' && d.videoId);
+    if (!toImport.length) { toast({ variant: 'destructive', title: 'No hay videos válidos para importar' }); return; }
+    setYtBulkImportingAll(true);
+    let ok = 0; let fail = 0;
+    for (const item of toImport) {
+      try {
+        const token = getToken('admin');
+        const r = await fetch(`${BASE_URL}/api/youtube/import`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+          body: JSON.stringify({ videoId: item.videoId, title: item.title, thumbnail: item.thumbnail, category: ytBulkCategory || undefined }),
+        });
+        if (r.ok) ok++; else fail++;
+      } catch { fail++; }
+    }
+    qc.invalidateQueries({ queryKey: getListMoviesQueryKey() });
+    setYtBulkResults({ ok, fail });
+    setYtBulkImportingAll(false);
+    if (fail === 0) toast({ title: `${ok} película(s) importada(s) exitosamente` });
+    else toast({ variant: 'destructive', title: `${ok} importadas, ${fail} fallaron` });
+  };
+
+    const archiveSearch = async (page = 1) => {
+    if (!archiveQuery.trim()) return;
+    setArchiveLoading(true);
+    setArchiveError('');
+    try {
+      const token = getToken('admin');
+      const langParam = archiveLang ? `&lang=${encodeURIComponent(archiveLang)}` : '';
+      const r = await fetch(`${BASE_URL}/api/archive/search?q=${encodeURIComponent(archiveQuery)}&page=${page}&rows=20${langParam}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const data = await r.json();
+      if (!r.ok) throw new Error(data.error || 'Error buscando en Archive.org');
+      setArchiveResults(data.items || []);
+      setArchivePage(page);
+    } catch (e: any) {
+      setArchiveError(e.message);
+    } finally {
+      setArchiveLoading(false);
+    }
+  };
+
+  const youtubeSearch = async () => {
+    if (!youtubeQuery.trim()) return;
+    setYoutubeLoading(true);
+    setYoutubeError('');
+    setYoutubeNeedsKey(false);
+    try {
+      const token = getToken('admin');
+      const typeParam = youtubeType ? `&type=${encodeURIComponent(youtubeType)}` : '';
+      const r = await fetch(`${BASE_URL}/api/admin/youtube-search?q=${encodeURIComponent(youtubeQuery)}${typeParam}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const data = await r.json();
+      if (!r.ok) throw new Error(data.error || 'Error buscando en YouTube');
+      setYoutubeResults(data.items || []);
+      setYoutubeNextToken('');
+    } catch (e: any) {
+      setYoutubeError(e.message);
+    } finally {
+      setYoutubeLoading(false);
+    }
+  };
+
+  const youtubeImport = async (item: { videoId: string; title: string; description?: string; year?: string; thumbnail: string }) => {
+    setYoutubeImporting(prev => new Set(prev).add(item.videoId));
+    try {
+      const token = getToken('admin');
+      const r = await fetch(`${BASE_URL}/api/youtube/import`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ ...item, category: youtubeCategory || undefined }),
+      });
+      const data = await r.json();
+      if (!r.ok) throw new Error(data.error || 'Error importando');
+      setYoutubeImported(prev => new Set(prev).add(item.videoId));
+      qc.invalidateQueries({ queryKey: getListMoviesQueryKey() });
+      toast({ title: `"${item.title}" importada de YouTube` });
+    } catch (e: any) {
+      toast({ variant: 'destructive', title: 'Error al importar', description: e.message });
+    } finally {
+      setYoutubeImporting(prev => { const s = new Set(prev); s.delete(item.videoId); return s; });
+    }
+  };
+
+  const archiveImport = async (item: { identifier: string; title: string; description?: string; year?: string | number }) => {
+    setArchiveImporting(prev => new Set(prev).add(item.identifier));
+    try {
+      const token = getToken('admin');
+      const r = await fetch(`${BASE_URL}/api/archive/import`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ ...item, category: archiveCategory || undefined }),
+      });
+      const data = await r.json();
+      if (!r.ok) throw new Error(data.error || 'Error importando');
+      setArchiveImported(prev => new Set(prev).add(item.identifier));
+      qc.invalidateQueries({ queryKey: getListMoviesQueryKey() });
+      toast({ title: `"${item.title}" importada exitosamente` });
+    } catch (e: any) {
+      toast({ variant: 'destructive', title: 'Error al importar', description: e.message });
+    } finally {
+      setArchiveImporting(prev => { const s = new Set(prev); s.delete(item.identifier); return s; });
+    }
+  };
+
+  // Dropbox browser state
+  const [showDropbox, setShowDropbox] = useState(false);
+  const [dbxPath, setDbxPath] = useState('');
+  const [dbxHistory, setDbxHistory] = useState<string[]>([]);
+  const [dbxFolders, setDbxFolders] = useState<{ name: string; path: string }[]>([]);
+  const [dbxFiles, setDbxFiles] = useState<{ name: string; path: string; size: number }[]>([]);
+  const [dbxLoading, setDbxLoading] = useState(false);
+  const [dbxError, setDbxError] = useState('');
+  const [dbxSelected, setDbxSelected] = useState<Set<string>>(new Set());
+  const [dbxImporting, setDbxImporting] = useState(false);
+  const [dbxCategory, setDbxCategory] = useState('');
+
+  const dbxBrowse = async (path: string) => {
+    setDbxLoading(true);
+    setDbxError('');
+    setDbxSelected(new Set());
+    try {
+      const token = getToken('admin');
+      const r = await fetch(`${BASE_URL}/api/dropbox/browse`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ path }),
+      });
+      const data = await r.json();
+      if (!r.ok) throw new Error(data.error || 'Error al conectar con Dropbox');
+      setDbxFolders(data.folders || []);
+      setDbxFiles((data.files || []).filter((f: any) => f.isVideo));
+      setDbxPath(path);
+    } catch (e: any) {
+      setDbxError(e.message);
+    } finally {
+      setDbxLoading(false);
+    }
+  };
+
+  const dbxOpen = () => {
+    setShowDropbox(true);
+    setDbxHistory([]);
+    setDbxPath('');
+    setDbxFolders([]);
+    setDbxFiles([]);
+    setDbxError('');
+    setDbxSelected(new Set());
+    dbxBrowse('');
+  };
+
+  const dbxNavigate = (path: string) => {
+    setDbxHistory(h => [...h, dbxPath]);
+    dbxBrowse(path);
+  };
+
+  const dbxBack = () => {
+    const prev = dbxHistory[dbxHistory.length - 1] ?? '';
+    setDbxHistory(h => h.slice(0, -1));
+    dbxBrowse(prev);
+  };
+
+  const dbxToggle = (path: string) => {
+    setDbxSelected(s => {
+      const n = new Set(s);
+      if (n.has(path)) n.delete(path); else n.add(path);
+      return n;
+    });
+  };
+
+  const dbxSelectAll = () => {
+    if (dbxSelected.size === dbxFiles.length) setDbxSelected(new Set());
+    else setDbxSelected(new Set(dbxFiles.map(f => f.path)));
+  };
+
+  const dbxImport = async () => {
+    const items = dbxFiles.filter(f => dbxSelected.has(f.path)).map(f => ({ name: f.name, path: f.path }));
+    if (!items.length) { toast({ variant: 'destructive', title: 'Selecciona al menos un archivo' }); return; }
+    setDbxImporting(true);
+    try {
+      const token = getToken('admin');
+      const r = await fetch(`${BASE_URL}/api/dropbox/import`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ importType: 'movies', items, category: dbxCategory || undefined }),
+      });
+      const data = await r.json();
+      if (!r.ok) throw new Error(data.error || 'Error al importar');
+      qc.invalidateQueries({ queryKey: getListMoviesQueryKey() });
+      setShowDropbox(false);
+      toast({ title: `${data.count} película(s) importada(s) desde Dropbox` });
+    } catch (e: any) {
+      toast({ variant: 'destructive', title: 'Error', description: e.message });
+    } finally {
+      setDbxImporting(false);
+    }
+  };
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
@@ -1939,11 +2809,11 @@ function MoviesManager() {
 
   const handleCreate = () => {
     if (!newMv.title || !newMv.filePath) { toast({ variant: 'destructive', title: 'Título y URL son requeridos' }); return; }
-    createMutation.mutate({ data: { title: newMv.title, filePath: newMv.filePath, category: newMv.category || undefined, description: newMv.description || undefined, poster: newMv.poster || undefined } }, {
+    createMutation.mutate({ data: { title: newMv.title, filePath: newMv.filePath, videoFormat: newMv.videoFormat || undefined, category: newMv.category || undefined, description: newMv.description || undefined, poster: newMv.poster || undefined } as any }, {
       onSuccess: () => {
         qc.invalidateQueries({ queryKey: getListMoviesQueryKey() });
         toast({ title: 'Película creada' });
-        setNewMv({ title: '', filePath: '', category: '', description: '', poster: '' }); setShowForm(false);
+        setNewMv({ title: '', filePath: '', videoFormat: '', category: '', description: '', poster: '' }); setShowForm(false);
       },
       onError: () => toast({ variant: 'destructive', title: 'Error al crear película' })
     });
@@ -1951,7 +2821,7 @@ function MoviesManager() {
 
   const handleUpdate = () => {
     if (!editMv || !editMv.title || !editMv.filePath) { toast({ variant: 'destructive', title: 'Título y URL son requeridos' }); return; }
-    updateMutation.mutate({ id: editMv.id, data: { title: editMv.title, filePath: editMv.filePath, category: editMv.category || undefined, description: editMv.description || undefined, poster: editMv.poster || undefined } }, {
+    updateMutation.mutate({ id: editMv.id, data: { title: editMv.title, filePath: editMv.filePath, videoFormat: editMv.videoFormat || undefined, category: editMv.category || undefined, description: editMv.description || undefined, poster: editMv.poster || undefined } as any }, {
       onSuccess: () => {
         qc.invalidateQueries({ queryKey: getListMoviesQueryKey() });
         toast({ title: 'Película actualizada' });
@@ -1966,6 +2836,18 @@ function MoviesManager() {
     deleteMutation.mutate({ id }, {
       onSuccess: () => { qc.invalidateQueries({ queryKey: getListMoviesQueryKey() }); toast({ title: 'Película eliminada' }); }
     });
+  };
+
+  const handleBulkDelete = async () => {
+    if (selectedMovieIds.size === 0) return;
+    if (!confirm(`¿Eliminar ${selectedMovieIds.size} película(s) seleccionada(s)? Esta acción no se puede deshacer.`)) return;
+    let deleted = 0;
+    for (const id of Array.from(selectedMovieIds)) {
+      try { await deleteMutation.mutateAsync({ id }); deleted++; } catch { /* ignore */ }
+    }
+    qc.invalidateQueries({ queryKey: getListMoviesQueryKey() });
+    setSelectedMovieIds(new Set());
+    toast({ title: `${deleted} película(s) eliminada(s)` });
   };
 
   const updateDetected = (id: string, patch: Partial<DetectedMovie>) =>
@@ -2051,29 +2933,46 @@ function MoviesManager() {
   };
 
   const uploadVideoFile = async (id: string, file: File): Promise<string | null> => {
-    updateDetected(id, { uploadStatus: 'uploading', uploadProgress: 10 });
-    try {
-      const r1 = await fetch(`${BASE_URL}/api/storage/uploads/request-url`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: file.name, size: file.size, contentType: file.type || 'video/mp4' }),
-      });
-      if (!r1.ok) throw new Error('No se pudo obtener URL de subida');
-      const { uploadURL, objectPath } = await r1.json();
-      updateDetected(id, { uploadProgress: 40 });
+    updateDetected(id, { uploadStatus: 'uploading', uploadProgress: 5 });
+    const token = getToken('admin');
+    return new Promise((resolve) => {
+      const xhr = new XMLHttpRequest();
+      const formData = new FormData();
+      formData.append('file', file);
 
-      const r2 = await fetch(uploadURL, {
-        method: 'PUT',
-        body: file,
-        headers: { 'Content-Type': file.type || 'video/mp4' },
+      xhr.upload.addEventListener('progress', (e) => {
+        if (e.lengthComputable) {
+          const pct = Math.round((e.loaded / e.total) * 95);
+          updateDetected(id, { uploadProgress: pct });
+        }
       });
-      if (!r2.ok) throw new Error('Error al subir el archivo');
-      updateDetected(id, { uploadStatus: 'done', uploadProgress: 100, filePath: `/api/storage${objectPath}` });
-      return `/api/storage${objectPath}`;
-    } catch (err) {
-      updateDetected(id, { uploadStatus: 'error', uploadProgress: 0 });
-      return null;
-    }
+
+      xhr.addEventListener('load', () => {
+        if (xhr.status >= 200 && xhr.status < 300) {
+          try {
+            const data = JSON.parse(xhr.responseText);
+            updateDetected(id, { uploadStatus: 'done', uploadProgress: 100, filePath: data.filePath });
+            resolve(data.filePath);
+          } catch {
+            updateDetected(id, { uploadStatus: 'error', uploadProgress: 0 });
+            resolve(null);
+          }
+        } else {
+          console.error('Upload failed:', xhr.status, xhr.responseText);
+          updateDetected(id, { uploadStatus: 'error', uploadProgress: 0 });
+          resolve(null);
+        }
+      });
+
+      xhr.addEventListener('error', () => {
+        updateDetected(id, { uploadStatus: 'error', uploadProgress: 0 });
+        resolve(null);
+      });
+
+      xhr.open('POST', `${BASE_URL}/api/videos/upload`);
+      if (token) xhr.setRequestHeader('Authorization', `Bearer ${token}`);
+      xhr.send(formData);
+    });
   };
 
   const handleBulkCreate = async () => {
@@ -2116,11 +3015,34 @@ function MoviesManager() {
         <h3 className="text-lg font-medium">Gestión de Películas</h3>
         <div className="flex gap-2 flex-wrap">
           {!sortMode && <>
+            <Button size="sm" variant="outline" onClick={() => setShowSmartImport(true)}>
+              <Link2 className="w-4 h-4 mr-2" />Importar enlace
+            </Button>
             <Button size="sm" variant="outline" onClick={() => folderRef.current?.click()}>
               <FolderOpen className="w-4 h-4 mr-2" />Subir Carpeta
             </Button>
             <input ref={folderRef} type="file" className="hidden" multiple onChange={handleFolderUpload}
               {...({ webkitdirectory: '', directory: '' } as any)} />
+            <Button size="sm" variant="outline" onClick={dbxOpen}>
+              <Download className="w-4 h-4 mr-2" />Dropbox
+            </Button>
+            <Button size="sm" variant="outline" onClick={() => { setShowArchive(true); setArchiveResults([]); setArchiveQuery(''); setArchiveImported(new Set()); setArchiveError(''); }}>
+              <Globe className="w-4 h-4 mr-2" />Archive.org
+            </Button>
+            <Button size="sm" variant="outline" onClick={() => { setShowYoutube(true); setYoutubeResults([]); setYoutubeQuery(''); setYoutubeImported(new Set()); setYoutubeError(''); setYoutubeNextToken(''); setYoutubePrevTokens([]); setYoutubePage(1); }}>
+              <Youtube className="w-4 h-4 mr-2" />YouTube
+            </Button>
+            <Button size="sm" variant="outline" onClick={() => { setShowYtUrl(true); setYtUrlInput(''); setYtUrlPreview(null); setYtUrlError(''); setYtUrlImported(false); }}>
+              <Link2 className="w-4 h-4 mr-2" />URL YouTube
+            </Button>
+            <Button size="sm" variant="outline" onClick={() => { setShowYtBulkImport(true); setYtBulkText(''); setYtBulkDetected([]); setYtBulkResults(null); setYtBulkCategory(''); }}>
+              <Youtube className="w-4 h-4 mr-2 text-red-500" />Lista URLs YouTube
+            </Button>
+            {selectedMovieIds.size > 0 && (
+              <Button size="sm" variant="destructive" onClick={handleBulkDelete} disabled={deleteMutation.isPending}>
+                <Trash2 className="w-4 h-4 mr-2" />Eliminar {selectedMovieIds.size} seleccionada(s)
+              </Button>
+            )}
             <Button size="sm" onClick={() => setShowForm(!showForm)}><Plus className="w-4 h-4 mr-2" />Nueva Película</Button>
           </>}
           {moviesList.length > 1 && (
@@ -2143,10 +3065,24 @@ function MoviesManager() {
         <Card className="bg-background border-border p-4">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <Input placeholder="Título *" value={newMv.title} onChange={e => setNewMv(p => ({ ...p, title: e.target.value }))} />
-            <Input placeholder="URL del archivo *" value={newMv.filePath} onChange={e => setNewMv(p => ({ ...p, filePath: e.target.value }))} />
+            <div className="flex gap-2 items-center">
+              <Input placeholder="URL del archivo *" value={newMv.filePath} onChange={e => setNewMv(p => ({ ...p, filePath: e.target.value }))} onBlur={e => { if (e.target.value) autoDetectFormat(e.target.value, 'new'); }} />
+              {newMv.videoFormat && <span className="shrink-0 text-[10px] font-bold uppercase px-2 py-0.5 rounded bg-primary/20 text-primary border border-primary/30">{newMv.videoFormat}</span>}
+              {detectingFormat && <span className="shrink-0 text-[10px] text-muted-foreground animate-pulse">Detectando...</span>}
+            </div>
             <Input placeholder="URL del poster" value={newMv.poster} onChange={e => setNewMv(p => ({ ...p, poster: e.target.value }))} />
             <Input placeholder="Categoría" value={newMv.category} onChange={e => setNewMv(p => ({ ...p, category: e.target.value }))} />
             <Input placeholder="Descripción" value={newMv.description} onChange={e => setNewMv(p => ({ ...p, description: e.target.value }))} />
+            <div className="flex items-center gap-2 col-span-full">
+              <label className="text-xs text-muted-foreground">Formato:</label>
+              <select className="text-xs bg-background border border-border rounded px-2 py-1" value={newMv.videoFormat} onChange={e => setNewMv(p => ({ ...p, videoFormat: e.target.value }))}>
+                <option value="">Auto-detectar</option>
+                <option value="hls">HLS (.m3u8)</option>
+                <option value="dash">DASH (.mpd)</option>
+                <option value="native">Nativo (MP4, WebM…)</option>
+                <option value="flv">FLV</option>
+              </select>
+            </div>
           </div>
           <div className="flex gap-2 mt-3">
             <Button onClick={handleCreate} disabled={createMutation.isPending}>{createMutation.isPending ? 'Creando...' : 'Crear'}</Button>
@@ -2154,6 +3090,184 @@ function MoviesManager() {
           </div>
         </Card>
       )}
+
+      <SmartLinkImport
+        open={showSmartImport}
+        onClose={() => setShowSmartImport(false)}
+        onImported={() => qc.invalidateQueries({ queryKey: getListMoviesQueryKey() })}
+      />
+
+      {/* YouTube URL import dialog */}
+      <Dialog open={showYtUrl} onOpenChange={o => !o && setShowYtUrl(false)}>
+        <DialogContent className="bg-card border-border max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Youtube className="w-5 h-5 text-red-500" />
+              Importar desde URL de YouTube
+            </DialogTitle>
+          </DialogHeader>
+
+          <div className="space-y-3">
+            <div className="flex gap-2">
+              <Input
+                placeholder="https://youtube.com/watch?v=..."
+                value={ytUrlInput}
+                onChange={e => setYtUrlInput(e.target.value)}
+                onKeyDown={e => e.key === 'Enter' && fetchYtUrlInfo(ytUrlInput)}
+                className="flex-1"
+              />
+              <Button onClick={() => fetchYtUrlInfo(ytUrlInput)} disabled={ytUrlLoading || !ytUrlInput.trim()} size="sm">
+                {ytUrlLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Buscar'}
+              </Button>
+            </div>
+
+            {ytUrlError && (
+              <p className="text-xs text-red-400 bg-red-400/10 border border-red-400/20 rounded-lg px-3 py-2">{ytUrlError}</p>
+            )}
+
+            {ytUrlImported && (
+              <div className="text-xs text-green-400 bg-green-400/10 border border-green-400/20 rounded-lg px-3 py-2 flex items-center gap-2">
+                <span>¡Película importada con éxito!</span>
+                <button className="underline" onClick={() => { setYtUrlImported(false); setYtUrlInput(''); setYtUrlPreview(null); }}>Importar otra</button>
+              </div>
+            )}
+
+            {ytUrlPreview && (
+              <div className="space-y-3">
+                <div className="flex gap-3 p-3 rounded-lg border border-border bg-background">
+                  <img
+                    src={ytUrlPreview.thumbnail}
+                    alt=""
+                    className="w-28 h-16 object-cover rounded-md flex-shrink-0 bg-muted"
+                    onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }}
+                  />
+                  <div className="flex-1 min-w-0 space-y-1">
+                    <p className="text-sm font-semibold leading-snug line-clamp-2">{ytUrlPreview.title}</p>
+                    <p className="text-xs text-muted-foreground">{ytUrlPreview.channel}{ytUrlPreview.year ? ` · ${ytUrlPreview.year}` : ''}</p>
+                    {ytUrlPreview.description && (
+                      <p className="text-xs text-muted-foreground line-clamp-2">{ytUrlPreview.description}</p>
+                    )}
+                  </div>
+                </div>
+                <Input
+                  placeholder="Categoría (opcional)"
+                  value={ytUrlCategory}
+                  onChange={e => setYtUrlCategory(e.target.value)}
+                />
+                <div className="flex gap-2">
+                  <Button onClick={importYtUrl} disabled={ytUrlImporting} className="flex-1">
+                    {ytUrlImporting ? <><Loader2 className="w-4 h-4 animate-spin mr-2" />Importando...</> : 'Importar película'}
+                  </Button>
+                  <Button variant="outline" onClick={() => setShowYtUrl(false)}>Cancelar</Button>
+                </div>
+              </div>
+            )}
+
+            {!ytUrlPreview && !ytUrlLoading && !ytUrlError && !ytUrlImported && (
+              <p className="text-xs text-muted-foreground text-center py-2">
+                Pega un enlace de YouTube y pulsa Buscar para obtener la información automáticamente.
+              </p>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
+
+        {/* YouTube Bulk URL Import Dialog */}
+        <Dialog open={showYtBulkImport} onOpenChange={o => !o && setShowYtBulkImport(false)}>
+          <DialogContent className="bg-card border-border max-w-2xl max-h-[90vh] flex flex-col">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <Youtube className="w-5 h-5 text-red-500" />
+                Importar lista de URLs de YouTube
+              </DialogTitle>
+            </DialogHeader>
+
+            <div className="flex-1 overflow-y-auto space-y-4">
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Pega las URLs (una por línea)</label>
+                <Textarea
+                  placeholder={"https://youtube.com/watch?v=xxx\nhttps://youtu.be/yyy\nhttps://youtube.com/watch?v=zzz"}
+                  value={ytBulkText}
+                  onChange={e => setYtBulkText(e.target.value)}
+                  rows={5}
+                  className="font-mono text-xs"
+                />
+                <p className="text-xs text-muted-foreground">
+                  {ytBulkText.split('\n').filter(l => l.trim()).length} URL(s) detectada(s)
+                </p>
+              </div>
+
+              <Input
+                placeholder="Categoría para todas (opcional)"
+                value={ytBulkCategory}
+                onChange={e => setYtBulkCategory(e.target.value)}
+              />
+
+              <Button
+                onClick={handleYtBulkDetect}
+                disabled={ytBulkDetecting || !ytBulkText.trim()}
+                className="w-full"
+              >
+                {ytBulkDetecting ? <><Loader2 className="w-4 h-4 animate-spin mr-2" />Detectando...</> : 'Detectar videos'}
+              </Button>
+
+              {ytBulkDetected.length > 0 && (
+                <div className="space-y-2">
+                  <p className="text-sm font-medium">
+                    {ytBulkDetected.filter(d => d.status === 'ok').length} válidos ·{' '}
+                    {ytBulkDetected.filter(d => d.status === 'error').length} inválidos
+                  </p>
+                  <div className="space-y-2 max-h-64 overflow-y-auto pr-1">
+                    {ytBulkDetected.map((item, idx) => (
+                      <div
+                        key={idx}
+                        className={`flex items-center gap-3 p-2 rounded-lg border ${item.status === 'error' ? 'border-red-500/30 bg-red-500/5' : 'border-border bg-background'}`}
+                      >
+                        {item.thumbnail ? (
+                          <img src={item.thumbnail} alt="" className="w-16 h-9 object-cover rounded flex-shrink-0 bg-muted" onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+                        ) : (
+                          <div className="w-16 h-9 bg-muted rounded flex-shrink-0 flex items-center justify-center">
+                            <Youtube className="w-4 h-4 text-muted-foreground" />
+                          </div>
+                        )}
+                        <div className="flex-1 min-w-0">
+                          <p className="text-xs font-medium truncate">{item.title}</p>
+                          <p className="text-[10px] text-muted-foreground truncate">{item.url}</p>
+                        </div>
+                        {item.status === 'error' ? (
+                          <XCircle className="w-4 h-4 text-red-500 flex-shrink-0" />
+                        ) : (
+                          <CheckCircle2 className="w-4 h-4 text-green-500 flex-shrink-0" />
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {ytBulkResults && (
+                <div className={`text-sm p-3 rounded-lg border ${ytBulkResults.fail === 0 ? 'border-green-500/30 bg-green-500/10 text-green-400' : 'border-yellow-500/30 bg-yellow-500/10 text-yellow-400'}`}>
+                  {ytBulkResults.ok} importada(s) · {ytBulkResults.fail} fallaron
+                </div>
+              )}
+            </div>
+
+            <DialogFooter className="gap-2 flex-wrap">
+              <Button variant="outline" onClick={() => setShowYtBulkImport(false)}>Cerrar</Button>
+              {ytBulkDetected.filter(d => d.status === 'ok').length > 0 && (
+                <Button
+                  onClick={handleYtBulkImportAll}
+                  disabled={ytBulkImportingAll}
+                  className="bg-red-600 hover:bg-red-700"
+                >
+                  {ytBulkImportingAll
+                    ? <><Loader2 className="w-4 h-4 animate-spin mr-2" />Importando...</>
+                    : `Importar ${ytBulkDetected.filter(d => d.status === 'ok').length} película(s)`}
+                </Button>
+              )}
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
 
       <Dialog open={showFolderPreview} onOpenChange={o => !o && setShowFolderPreview(false)}>
         <DialogContent className="bg-card border-border max-w-4xl max-h-[90vh] flex flex-col">
@@ -2245,13 +3359,327 @@ function MoviesManager() {
         </DialogContent>
       </Dialog>
 
+      {/* Dropbox browser dialog */}
+      <Dialog open={showDropbox} onOpenChange={o => !o && setShowDropbox(false)}>
+        <DialogContent className="max-w-2xl h-[80vh] flex flex-col gap-0 p-0">
+          <DialogHeader className="px-4 pt-4 pb-2 border-b border-border flex-shrink-0">
+            <DialogTitle className="flex items-center gap-2">
+              <Download className="w-4 h-4 text-blue-400" />
+              Importar películas desde Dropbox
+            </DialogTitle>
+          </DialogHeader>
+
+          <div className="px-4 py-2 flex-shrink-0 border-b border-border flex items-center gap-2 text-sm">
+            {dbxHistory.length > 0 && (
+              <Button size="sm" variant="ghost" className="h-7 px-2" onClick={dbxBack}>
+                <ChevronDown className="w-3 h-3 rotate-90 mr-1" />Atrás
+              </Button>
+            )}
+            <span className="text-muted-foreground truncate flex-1 font-mono text-xs">{dbxPath || '/'}</span>
+            <Button size="sm" variant="ghost" className="h-7 px-2" onClick={() => dbxBrowse(dbxPath)} disabled={dbxLoading}>
+              <RefreshCw className={`w-3 h-3 ${dbxLoading ? 'animate-spin' : ''}`} />
+            </Button>
+          </div>
+
+          <div className="flex-1 overflow-y-auto p-4 space-y-1 min-h-0">
+            {dbxError && (
+              <div className="text-sm text-destructive bg-destructive/10 rounded-lg p-3 flex items-start gap-2">
+                <AlertTriangle className="w-4 h-4 mt-0.5 flex-shrink-0" />
+                <span>{dbxError}</span>
+              </div>
+            )}
+            {dbxLoading && <div className="text-center py-8 text-muted-foreground text-sm flex items-center justify-center gap-2"><Loader2 className="w-4 h-4 animate-spin" />Cargando...</div>}
+            {!dbxLoading && !dbxError && (
+              <>
+                {dbxFolders.map(f => (
+                  <button key={f.path} onClick={() => dbxNavigate(f.path)}
+                    className="w-full flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-accent text-left transition-colors">
+                    <FolderOpen className="w-4 h-4 text-yellow-400 flex-shrink-0" />
+                    <span className="text-sm">{f.name}</span>
+                    <ChevronRight className="w-3 h-3 text-muted-foreground ml-auto" />
+                  </button>
+                ))}
+                {dbxFiles.length > 0 && (
+                  <>
+                    <div className="flex items-center gap-2 py-1 px-1 border-t border-border mt-2 pt-2">
+                      <span className="text-xs text-muted-foreground flex-1">{dbxFiles.length} archivo(s) de video</span>
+                      <button onClick={dbxSelectAll} className="text-xs text-primary hover:underline">
+                        {dbxSelected.size === dbxFiles.length ? 'Deseleccionar todo' : 'Seleccionar todo'}
+                      </button>
+                    </div>
+                    {dbxFiles.map(f => (
+                      <label key={f.path} className={`flex items-center gap-3 px-3 py-2 rounded-lg cursor-pointer transition-colors ${dbxSelected.has(f.path) ? 'bg-primary/10 border border-primary/20' : 'hover:bg-accent'}`}>
+                        <input type="checkbox" className="accent-primary" checked={dbxSelected.has(f.path)} onChange={() => dbxToggle(f.path)} />
+                        <Film className="w-4 h-4 text-blue-400 flex-shrink-0" />
+                        <span className="text-sm flex-1 truncate">{f.name}</span>
+                        <span className="text-xs text-muted-foreground">{f.size ? `${(f.size / 1024 / 1024 / 1024).toFixed(1)} GB` : ''}</span>
+                      </label>
+                    ))}
+                  </>
+                )}
+                {dbxFolders.length === 0 && dbxFiles.length === 0 && (
+                  <div className="text-center text-muted-foreground text-sm py-8">Carpeta vacía</div>
+                )}
+              </>
+            )}
+          </div>
+
+          <DialogFooter className="px-4 py-3 border-t border-border flex-shrink-0 flex-wrap gap-2">
+            <Input placeholder="Categoría (opcional)" value={dbxCategory} onChange={e => setDbxCategory(e.target.value)} className="w-40 h-8 text-sm" />
+            <div className="flex-1" />
+            <Button variant="outline" size="sm" onClick={() => setShowDropbox(false)}>Cancelar</Button>
+            <Button size="sm" onClick={dbxImport} disabled={dbxImporting || dbxSelected.size === 0}>
+              {dbxImporting ? <Loader2 className="w-3 h-3 animate-spin mr-1" /> : <Download className="w-3 h-3 mr-1" />}
+              Importar {dbxSelected.size > 0 ? `${dbxSelected.size} película(s)` : ''}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Archive.org search dialog */}
+      <Dialog open={showArchive} onOpenChange={o => !o && setShowArchive(false)}>
+        <DialogContent className="max-w-3xl h-[85vh] flex flex-col gap-0 p-0">
+          <DialogHeader className="px-4 pt-4 pb-2 border-b border-border flex-shrink-0">
+            <DialogTitle className="flex items-center gap-2">
+              <Globe className="w-4 h-4 text-primary" />
+              Buscar en Archive.org
+            </DialogTitle>
+            <p className="text-xs text-muted-foreground mt-1">Películas de dominio público — gratuitas y legales</p>
+          </DialogHeader>
+
+          <div className="px-4 py-3 flex-shrink-0 border-b border-border flex gap-2 flex-wrap">
+            <Input
+              placeholder="Chaplin, western, horror, 1940..."
+              value={archiveQuery}
+              onChange={e => setArchiveQuery(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && archiveSearch(1)}
+              className="flex-1 min-w-0"
+            />
+            <select
+              value={archiveLang}
+              onChange={e => setArchiveLang(e.target.value)}
+              className="h-9 rounded-md border border-input bg-background px-2 text-sm text-foreground w-32 flex-shrink-0"
+            >
+              <option value="">Todos los idiomas</option>
+              <option value="spanish">Español</option>
+              <option value="english">Inglés</option>
+              <option value="french">Francés</option>
+              <option value="portuguese">Portugués</option>
+              <option value="italian">Italiano</option>
+            </select>
+            <Input
+              placeholder="Categoría (opcional)"
+              value={archiveCategory}
+              onChange={e => setArchiveCategory(e.target.value)}
+              className="w-32 flex-shrink-0"
+            />
+            <Button onClick={() => archiveSearch(1)} disabled={archiveLoading || !archiveQuery.trim()} className="flex-shrink-0">
+              {archiveLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
+            </Button>
+          </div>
+
+          <div className="flex-1 overflow-y-auto p-4 min-h-0">
+            {archiveError && (
+              <div className="text-sm text-destructive bg-destructive/10 rounded-lg p-3 flex items-start gap-2 mb-3">
+                <AlertTriangle className="w-4 h-4 mt-0.5 flex-shrink-0" />
+                <span>{archiveError}</span>
+              </div>
+            )}
+            {archiveLoading && (
+              <div className="text-center py-12 text-muted-foreground text-sm flex flex-col items-center gap-3">
+                <Loader2 className="w-6 h-6 animate-spin" />
+                <span>Buscando en Archive.org...</span>
+              </div>
+            )}
+            {!archiveLoading && archiveResults.length === 0 && !archiveError && (
+              <div className="text-center py-12 text-muted-foreground text-sm">
+                <Globe className="w-8 h-8 mx-auto mb-3 opacity-30" />
+                <p>Escribe cualquier frase y presiona Enter</p>
+                <p className="text-xs mt-1 opacity-60">Ej: "películas de acción", "drama romántico", "El Zorro", "comedia 1980"</p>
+                <p className="text-xs mt-1 opacity-40">Entiende español — traduce y busca automáticamente. Contenido adulto excluido.</p>
+              </div>
+            )}
+            {!archiveLoading && archiveResults.length > 0 && (
+              <div className="space-y-2">
+                {archiveResults.map(item => (
+                  <div key={item.identifier} className="flex gap-3 p-3 rounded-lg border border-border bg-card hover:bg-accent/30 transition-colors">
+                    <img
+                      src={`https://archive.org/services/img/${item.identifier}`}
+                      alt=""
+                      className="w-14 h-20 object-cover rounded flex-shrink-0 bg-muted"
+                      onError={e => { (e.target as HTMLImageElement).src = ''; (e.target as HTMLImageElement).className = 'w-14 h-20 rounded flex-shrink-0 bg-muted flex items-center justify-center'; }}
+                    />
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0">
+                          <p className="font-medium text-sm truncate">{item.title}</p>
+                          <p className="text-xs text-muted-foreground mt-0.5">
+                            {item.year && <span className="mr-2">{item.year}</span>}
+                            {item.creator && <span className="text-muted-foreground/70">{item.creator}</span>}
+                          </p>
+                        </div>
+                        {archiveImported.has(item.identifier) ? (
+                          <span className="text-xs text-green-400 bg-green-500/10 border border-green-500/20 px-2 py-1 rounded flex-shrink-0">✓ Importada</span>
+                        ) : (
+                          <Button
+                            size="sm"
+                            className="flex-shrink-0 h-7 text-xs"
+                            disabled={archiveImporting.has(item.identifier)}
+                            onClick={() => archiveImport(item)}
+                          >
+                            {archiveImporting.has(item.identifier) ? <Loader2 className="w-3 h-3 animate-spin mr-1" /> : <Plus className="w-3 h-3 mr-1" />}
+                            Importar
+                          </Button>
+                        )}
+                      </div>
+                      {item.subject && (
+                        <p className="text-xs text-primary/70 mt-1 truncate">{item.subject}</p>
+                      )}
+                      {item.description && (
+                        <p className="text-xs text-muted-foreground mt-1 line-clamp-2 leading-relaxed">
+                          {typeof item.description === 'string' ? item.description.replace(/<[^>]+>/g, '') : ''}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                ))}
+                <div className="flex justify-center gap-2 pt-2">
+                  <Button variant="outline" size="sm" disabled={archivePage <= 1 || archiveLoading} onClick={() => archiveSearch(archivePage - 1)}>
+                    ← Anterior
+                  </Button>
+                  <span className="text-xs text-muted-foreground flex items-center px-2">Página {archivePage}</span>
+                  <Button variant="outline" size="sm" disabled={archiveResults.length < 20 || archiveLoading} onClick={() => archiveSearch(archivePage + 1)}>
+                    Siguiente →
+                  </Button>
+                </div>
+              </div>
+            )}
+          </div>
+
+          <DialogFooter className="px-4 py-3 border-t border-border flex-shrink-0">
+            <Button variant="outline" size="sm" onClick={() => setShowArchive(false)}>Cerrar</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* YouTube search dialog */}
+      <Dialog open={showYoutube} onOpenChange={o => !o && setShowYoutube(false)}>
+        <DialogContent className="max-w-2xl w-full h-[80vh] flex flex-col p-0 gap-0">
+          <DialogHeader className="px-4 pt-4 pb-2 border-b border-border flex-shrink-0">
+            <DialogTitle className="flex items-center gap-2">
+              <Youtube className="w-4 h-4 text-red-500" />
+              Buscar en YouTube
+            </DialogTitle>
+            <p className="text-xs text-muted-foreground mt-1">Busca películas completas — se reproducen dentro de Super TV vía YouTube</p>
+          </DialogHeader>
+
+          <div className="px-4 py-3 flex-shrink-0 border-b border-border flex gap-2 flex-wrap">
+            <Input
+              placeholder="Título, género, año... ej: 'El Zorro', 'comedia mexicana 2010'"
+              value={youtubeQuery}
+              onChange={e => setYoutubeQuery(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter') youtubeSearch(); }}
+              className="flex-1 min-w-0"
+            />
+            <select
+              value={youtubeType}
+              onChange={e => setYoutubeType(e.target.value)}
+              className="h-9 rounded-md border border-input bg-background px-2 text-sm text-foreground w-32 flex-shrink-0"
+            >
+              <option value="movie">Películas</option>
+              <option value="series">Series</option>
+            </select>
+            <Input
+              placeholder="Categoría (opcional)"
+              value={youtubeCategory}
+              onChange={e => setYoutubeCategory(e.target.value)}
+              className="w-32 flex-shrink-0"
+            />
+            <Button onClick={() => youtubeSearch()} disabled={youtubeLoading || !youtubeQuery.trim()} className="flex-shrink-0">
+              {youtubeLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
+            </Button>
+          </div>
+
+          <div className="flex-1 overflow-y-auto p-4 min-h-0">
+            {youtubeError && (
+              <div className="text-sm text-destructive bg-destructive/10 rounded-lg p-3 flex items-start gap-2 mb-3">
+                <AlertTriangle className="w-4 h-4 mt-0.5 flex-shrink-0" />
+                <span>{youtubeError}</span>
+              </div>
+            )}
+            {youtubeLoading && (
+              <div className="text-center py-12 text-muted-foreground text-sm flex flex-col items-center gap-3">
+                <Loader2 className="w-6 h-6 animate-spin" />
+                <span>Buscando en YouTube...</span>
+              </div>
+            )}
+            {!youtubeLoading && youtubeResults.length === 0 && !youtubeError && (
+              <div className="text-center py-12 text-muted-foreground text-sm">
+                <Youtube className="w-8 h-8 mx-auto mb-3 opacity-30" />
+                <p>Escribe algo y presiona Enter para buscar</p>
+                <p className="text-xs mt-1 opacity-60">Sin necesidad de API key — búsqueda directa en YouTube</p>
+                <p className="text-xs mt-1 opacity-40">Los videos se reproducen dentro de Super TV usando el reproductor de YouTube</p>
+              </div>
+            )}
+            {!youtubeLoading && youtubeResults.length > 0 && (
+              <div className="space-y-2">
+                {youtubeResults.map(item => (
+                  <div key={item.videoId} className="flex gap-3 p-3 rounded-lg border border-border bg-card hover:bg-accent/30 transition-colors">
+                    <img
+                      src={item.thumbnail}
+                      alt=""
+                      className="w-24 h-14 object-cover rounded flex-shrink-0 bg-muted"
+                      onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }}
+                    />
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0">
+                          <p className="font-medium text-sm leading-tight line-clamp-2">{item.title}</p>
+                          <p className="text-xs text-muted-foreground mt-0.5 flex items-center gap-2 flex-wrap">
+                            {item.duration && <span className="text-primary/70">{item.duration}</span>}
+                            {item.channel && <span className="text-muted-foreground/60 truncate max-w-[180px]">{item.channel}</span>}
+                          </p>
+                        </div>
+                        {youtubeImported.has(item.videoId) ? (
+                          <span className="text-xs text-green-400 bg-green-500/10 border border-green-500/20 px-2 py-1 rounded flex-shrink-0">✓ Importada</span>
+                        ) : (
+                          <Button
+                            size="sm"
+                            className="flex-shrink-0 h-7 text-xs"
+                            disabled={youtubeImporting.has(item.videoId)}
+                            onClick={() => youtubeImport(item)}
+                          >
+                            {youtubeImporting.has(item.videoId) ? <Loader2 className="w-3 h-3 animate-spin mr-1" /> : <Plus className="w-3 h-3 mr-1" />}
+                            Importar
+                          </Button>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <DialogFooter className="px-4 py-3 border-t border-border flex-shrink-0">
+            <Button variant="outline" size="sm" onClick={() => setShowYoutube(false)}>Cerrar</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
         <SortableContext items={sortMode ? sortedIds : moviesList.map(m => m.id)} strategy={verticalListSortingStrategy}>
           <div className="overflow-x-auto rounded-lg border border-border">
             <Table>
               <TableHeader>
                 <TableRow>
-                  {sortMode && <TableHead className="w-8"></TableHead>}
+                  <TableHead className="w-8 pr-0 pl-3">
+                    <input type="checkbox" className="accent-primary w-4 h-4 cursor-pointer"
+                      checked={displayMovies.length > 0 && displayMovies.every(m => selectedMovieIds.has(m.id))}
+                      onChange={e => { if (e.target.checked) setSelectedMovieIds(new Set(displayMovies.map(m => m.id))); else setSelectedMovieIds(new Set()); }}
+                    />
+                  </TableHead>
+                  <TableHead className="w-8"></TableHead>
                   <TableHead>Título</TableHead>
                   <TableHead>Categoría</TableHead>
                   <TableHead>Dominio</TableHead>
@@ -2263,12 +3691,14 @@ function MoviesManager() {
                   <SortableMovieRow
                     key={mv.id}
                     mv={mv}
-                    onEdit={() => setEditMv({ id: mv.id, title: mv.title, filePath: mv.filePath, category: mv.category || '', description: mv.description || '', poster: mv.poster || '' })}
+                    onEdit={() => setEditMv({ id: mv.id, title: mv.title, filePath: mv.filePath, videoFormat: (mv as any).videoFormat || '', category: mv.category || '', description: mv.description || '', poster: mv.poster || '' })}
                     onDelete={() => handleDelete(mv.id)}
+                    selected={selectedMovieIds.has(mv.id)}
+                    onToggleSelect={() => setSelectedMovieIds(prev => { const next = new Set(prev); if (next.has(mv.id)) next.delete(mv.id); else next.add(mv.id); return next; })}
                   />
                 ))}
                 {moviesList.length === 0 && (
-                  <TableRow><TableCell colSpan={5} className="text-center text-muted-foreground py-8">Sin películas aún</TableCell></TableRow>
+                  <TableRow><TableCell colSpan={7} className="text-center text-muted-foreground py-8">Sin películas aún</TableCell></TableRow>
                 )}
               </TableBody>
             </Table>
@@ -2282,7 +3712,20 @@ function MoviesManager() {
           {editMv && (
             <div className="space-y-3">
               <Input placeholder="Título *" value={editMv.title} onChange={e => setEditMv(p => p ? { ...p, title: e.target.value } : p)} />
-              <Input placeholder="URL del archivo *" value={editMv.filePath} onChange={e => setEditMv(p => p ? { ...p, filePath: e.target.value } : p)} />
+              <div className="flex gap-2 items-center">
+                <Input placeholder="URL del archivo *" value={editMv.filePath} onChange={e => setEditMv(p => p ? { ...p, filePath: e.target.value } : p)} onBlur={e => { if (e.target.value) autoDetectFormat(e.target.value, 'edit'); }} />
+                {editMv.videoFormat && <span className="shrink-0 text-[10px] font-bold uppercase px-2 py-0.5 rounded bg-primary/20 text-primary border border-primary/30">{editMv.videoFormat}</span>}
+              </div>
+              <div className="flex items-center gap-2">
+                <label className="text-xs text-muted-foreground">Formato:</label>
+                <select className="text-xs bg-background border border-border rounded px-2 py-1" value={editMv.videoFormat} onChange={e => setEditMv(p => p ? { ...p, videoFormat: e.target.value } : p)}>
+                  <option value="">Auto-detectar</option>
+                  <option value="hls">HLS (.m3u8)</option>
+                  <option value="dash">DASH (.mpd)</option>
+                  <option value="native">Nativo (MP4, WebM…)</option>
+                  <option value="flv">FLV</option>
+                </select>
+              </div>
               <Input placeholder="URL del poster" value={editMv.poster} onChange={e => setEditMv(p => p ? { ...p, poster: e.target.value } : p)} />
               <Input placeholder="Categoría" value={editMv.category} onChange={e => setEditMv(p => p ? { ...p, category: e.target.value } : p)} />
               <Input placeholder="Descripción" value={editMv.description} onChange={e => setEditMv(p => p ? { ...p, description: e.target.value } : p)} />
@@ -2752,6 +4195,116 @@ function SettingsManager() {
   const [showNew, setShowNew] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
 
+  // Terabox cookies setting
+  const [teraboxCookies, setTeraboxCookies] = useState('');
+  const [teraboxSaved, setTeraboxSaved] = useState(false);
+  const [teraboxLoading, setTeraboxLoading] = useState(false);
+  const [teraboxConfigured, setTeraboxConfigured] = useState<boolean | null>(null);
+  const [showTerabox, setShowTerabox] = useState(false);
+
+  // Dropbox token setting
+  const [dropboxToken, setDropboxToken] = useState('');
+  const [dropboxSaved, setDropboxSaved] = useState(false);
+  const [dropboxLoading, setDropboxLoading] = useState(false);
+  const [dropboxConfigured, setDropboxConfigured] = useState<boolean | null>(null);
+  const [dropboxTestResult, setDropboxTestResult] = useState<{ ok: boolean; name?: string; email?: string; error?: string } | null>(null);
+
+  useEffect(() => {
+    const token = localStorage.getItem('admin_token') || localStorage.getItem('user_token') || '';
+    fetch('/api/admin/settings', { headers: { Authorization: `Bearer ${token}` } })
+      .then(r => r.json())
+      .then(d => {
+        setTeraboxConfigured(!!d.teraboxCookies);
+        setDropboxConfigured(!!d.dropboxToken);
+      })
+      .catch(() => {});
+  }, []);
+
+  const handleSaveDropbox = async () => {
+    const token = localStorage.getItem('admin_token') || localStorage.getItem('user_token') || '';
+    setDropboxLoading(true);
+    try {
+      const r = await fetch('/api/admin/settings', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ dropboxToken: dropboxToken.trim() || null }),
+      });
+      if (!r.ok) throw new Error((await r.json()).error || 'Error');
+      setDropboxConfigured(!!dropboxToken.trim());
+      setDropboxToken('');
+      setDropboxSaved(true);
+      setDropboxTestResult(null);
+      setTimeout(() => setDropboxSaved(false), 3000);
+      toast({ title: 'Token de Dropbox guardado', description: 'Ya puedes importar películas desde tu Dropbox.' });
+    } catch (e: any) {
+      toast({ variant: 'destructive', title: 'Error', description: e.message });
+    } finally {
+      setDropboxLoading(false);
+    }
+  };
+
+  const handleClearDropbox = async () => {
+    const token = localStorage.getItem('admin_token') || localStorage.getItem('user_token') || '';
+    setDropboxLoading(true);
+    try {
+      await fetch('/api/admin/settings', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ dropboxToken: null }),
+      });
+      setDropboxConfigured(false);
+      setDropboxTestResult(null);
+      toast({ title: 'Token de Dropbox eliminado' });
+    } catch { } finally { setDropboxLoading(false); }
+  };
+
+  const handleTestDropbox = async () => {
+    const token = localStorage.getItem('admin_token') || localStorage.getItem('user_token') || '';
+    setDropboxLoading(true);
+    try {
+      const r = await fetch('/api/dropbox/test', { headers: { Authorization: `Bearer ${token}` } });
+      const data = await r.json();
+      setDropboxTestResult(data);
+    } catch { setDropboxTestResult({ ok: false, error: 'Error de conexión' }); }
+    finally { setDropboxLoading(false); }
+  };
+
+  const handleSaveTerabox = async () => {
+    const token = localStorage.getItem('admin_token') || localStorage.getItem('user_token') || '';
+    setTeraboxLoading(true);
+    try {
+      const r = await fetch('/api/admin/settings', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ teraboxCookies: teraboxCookies.trim() || null }),
+      });
+      if (!r.ok) throw new Error((await r.json()).error || 'Error');
+      setTeraboxConfigured(!!teraboxCookies.trim());
+      setTeraboxCookies('');
+      setTeraboxSaved(true);
+      setTimeout(() => setTeraboxSaved(false), 3000);
+      toast({ title: 'Cookies de Terabox guardadas', description: 'Los videos de Terabox ya deberían reproducirse correctamente.' });
+    } catch (e: any) {
+      toast({ variant: 'destructive', title: 'Error', description: e.message });
+    } finally {
+      setTeraboxLoading(false);
+    }
+  };
+
+  const handleClearTerabox = async () => {
+    const token = localStorage.getItem('admin_token') || localStorage.getItem('user_token') || '';
+    setTeraboxLoading(true);
+    try {
+      await fetch('/api/admin/settings', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ teraboxCookies: null }),
+      });
+      setTeraboxConfigured(false);
+      toast({ title: 'Cookies eliminadas' });
+    } catch { /* ignore */ } finally { setTeraboxLoading(false); }
+  };
+
   const handleChangePassword = (e: React.FormEvent) => {
     e.preventDefault();
     if (newPassword !== confirmPassword) {
@@ -2784,6 +4337,130 @@ function SettingsManager() {
       <h3 className="text-lg font-medium flex items-center gap-2">
         <Settings className="w-5 h-5" /> Configuración
       </h3>
+
+      {/* Terabox Cookies */}
+      <Card className="bg-background border-border">
+        <CardHeader>
+          <CardTitle className="text-base flex items-center gap-2">
+            <Download className="w-4 h-4" /> Cookies de Terabox
+            {teraboxConfigured === true && (
+              <span className="ml-auto text-xs text-green-500 flex items-center gap-1">
+                <CheckCircle2 className="w-3 h-3" /> Configuradas
+              </span>
+            )}
+            {teraboxConfigured === false && (
+              <span className="ml-auto text-xs text-yellow-500 flex items-center gap-1">
+                <XCircle className="w-3 h-3" /> No configuradas
+              </span>
+            )}
+          </CardTitle>
+          <p className="text-xs text-muted-foreground mt-1">
+            Para reproducir videos de Terabox necesitas proporcionar las cookies de tu cuenta.
+            Sin ellas, Terabox bloquea el acceso a los archivos.
+          </p>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <div className="bg-muted/50 rounded-md p-3 text-xs text-muted-foreground space-y-1">
+            <p className="font-medium text-foreground">Cómo obtener las cookies:</p>
+            <ol className="list-decimal list-inside space-y-1">
+              <li>Inicia sesión en <span className="font-mono">1024terabox.com</span> en tu navegador</li>
+              <li>Abre DevTools (F12) → Aplicación → Cookies → <span className="font-mono">1024terabox.com</span></li>
+              <li>Copia el valor de <span className="font-mono text-yellow-400">BDUSS</span> y/o <span className="font-mono text-yellow-400">bdstoken</span></li>
+              <li>Pégalos abajo en formato: <span className="font-mono">BDUSS=xxx; bdstoken=yyy</span></li>
+            </ol>
+          </div>
+          <div className="relative">
+            <textarea
+              className="w-full min-h-[80px] rounded-md border border-input bg-background px-3 py-2 text-sm font-mono resize-none focus:outline-none focus:ring-1 focus:ring-ring"
+              placeholder="BDUSS=abc123...; bdstoken=xyz..."
+              value={teraboxCookies}
+              onChange={e => setTeraboxCookies(e.target.value)}
+              onFocus={() => setShowTerabox(true)}
+            />
+          </div>
+          <div className="flex gap-2">
+            <Button
+              onClick={handleSaveTerabox}
+              disabled={teraboxLoading || !teraboxCookies.trim()}
+              className="flex-1"
+            >
+              {teraboxLoading ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : teraboxSaved ? <CheckCircle2 className="w-4 h-4 mr-2 text-green-500" /> : null}
+              {teraboxSaved ? 'Guardado' : 'Guardar Cookies'}
+            </Button>
+            {teraboxConfigured && (
+              <Button variant="outline" onClick={handleClearTerabox} disabled={teraboxLoading} className="text-destructive border-destructive hover:bg-destructive/10">
+                Eliminar
+              </Button>
+            )}
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Dropbox Token */}
+      <Card className="bg-background border-border">
+        <CardHeader>
+          <CardTitle className="text-base flex items-center gap-2">
+            <Download className="w-4 h-4 text-blue-400" /> Token de Dropbox
+            {dropboxConfigured === true && (
+              <span className="ml-auto text-xs text-green-500 flex items-center gap-1">
+                <CheckCircle2 className="w-3 h-3" /> Configurado
+              </span>
+            )}
+            {dropboxConfigured === false && (
+              <span className="ml-auto text-xs text-yellow-500 flex items-center gap-1">
+                <XCircle className="w-3 h-3" /> No configurado
+              </span>
+            )}
+          </CardTitle>
+          <p className="text-xs text-muted-foreground mt-1">
+            Conecta tu cuenta de Dropbox para importar películas y series directamente desde tus carpetas.
+          </p>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <div className="bg-muted/50 rounded-md p-3 text-xs text-muted-foreground space-y-1">
+            <p className="font-medium text-foreground">Cómo obtener tu token:</p>
+            <ol className="list-decimal list-inside space-y-1">
+              <li>Ve a <span className="font-mono">dropbox.com/developers/apps</span></li>
+              <li>Clic en <span className="font-medium">Create app</span> → Scoped access → Full Dropbox → ponle un nombre</li>
+              <li>En la pestaña <span className="font-medium">Permissions</span>, activa: <span className="font-mono text-yellow-400">files.content.read</span></li>
+              <li>En la pestaña <span className="font-medium">Settings</span>, baja hasta <span className="font-medium">Generated access token</span> y haz clic en <span className="font-medium">Generate</span></li>
+              <li>Copia el token y pégalo abajo</li>
+            </ol>
+          </div>
+          <Input
+            type="password"
+            placeholder="sl.xxxxxxxxxxxxxxxxxx..."
+            value={dropboxToken}
+            onChange={e => setDropboxToken(e.target.value)}
+            className="font-mono text-sm"
+          />
+          {dropboxTestResult && (
+            <div className={`text-xs rounded-md px-3 py-2 flex items-center gap-2 ${dropboxTestResult.ok ? 'bg-green-500/10 text-green-400 border border-green-500/20' : 'bg-destructive/10 text-destructive border border-destructive/20'}`}>
+              {dropboxTestResult.ok
+                ? <><CheckCircle2 className="w-3 h-3 flex-shrink-0" /> Conectado como <strong>{dropboxTestResult.name}</strong> ({dropboxTestResult.email})</>
+                : <><XCircle className="w-3 h-3 flex-shrink-0" /> {dropboxTestResult.error}</>
+              }
+            </div>
+          )}
+          <div className="flex gap-2 flex-wrap">
+            <Button onClick={handleSaveDropbox} disabled={dropboxLoading || !dropboxToken.trim()} className="flex-1">
+              {dropboxLoading ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : dropboxSaved ? <CheckCircle2 className="w-4 h-4 mr-2 text-green-500" /> : null}
+              {dropboxSaved ? 'Guardado' : 'Guardar Token'}
+            </Button>
+            {dropboxConfigured && (
+              <Button variant="outline" onClick={handleTestDropbox} disabled={dropboxLoading}>
+                <Wifi className="w-4 h-4 mr-2" />Probar
+              </Button>
+            )}
+            {dropboxConfigured && (
+              <Button variant="outline" onClick={handleClearDropbox} disabled={dropboxLoading} className="text-destructive border-destructive hover:bg-destructive/10">
+                Eliminar
+              </Button>
+            )}
+          </div>
+        </CardContent>
+      </Card>
+
       <Card className="bg-background border-border">
         <CardHeader>
           <CardTitle className="text-base flex items-center gap-2">
@@ -2842,7 +4519,125 @@ function SettingsManager() {
           </form>
         </CardContent>
       </Card>
+
+      <SectionLayoutManager />
     </div>
+  );
+}
+
+type SectionId = 'channels' | 'movies' | 'series';
+const SECTION_LABELS: Record<SectionId, string> = { channels: 'En Vivo (Canales)', movies: 'Películas', series: 'Series' };
+const SECTION_ICONS: Record<SectionId, React.FC<{ className?: string }>> = { channels: Tv, movies: Film, series: Tv2 };
+const DEFAULT_ORDER: SectionId[] = ['channels', 'movies', 'series'];
+const DEFAULT_VIS: Record<SectionId, boolean> = { channels: true, movies: true, series: true };
+
+function SortableSectionItem({ id, label, icon: Icon, visible, onToggleVisible }: { id: string; label: string; icon: React.FC<{ className?: string }>; visible: boolean; onToggleVisible: () => void }) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id });
+  const style = { transform: CSS.Transform.toString(transform), transition, opacity: isDragging ? 0.5 : 1 };
+  return (
+    <div ref={setNodeRef} style={style} className={`flex items-center gap-3 p-3 rounded-lg border ${visible ? 'border-border bg-muted/30' : 'border-border/40 bg-muted/10 opacity-60'}`}>
+      <button {...attributes} {...listeners} className="cursor-grab active:cursor-grabbing text-muted-foreground hover:text-foreground touch-none">
+        <GripVertical className="w-4 h-4" />
+      </button>
+      <Icon className="w-4 h-4 text-muted-foreground flex-shrink-0" />
+      <span className="flex-1 text-sm font-medium">{label}</span>
+      <button
+        onClick={onToggleVisible}
+        className={`text-xs flex items-center gap-1 px-2 py-1 rounded-md border transition-colors ${visible ? 'border-green-500/40 text-green-400 bg-green-500/10 hover:bg-green-500/20' : 'border-border text-muted-foreground hover:bg-muted'}`}
+      >
+        {visible ? <Eye className="w-3 h-3" /> : <EyeOff className="w-3 h-3" />}
+        {visible ? 'Visible' : 'Oculto'}
+      </button>
+    </div>
+  );
+}
+
+function SectionLayoutManager() {
+  const { toast } = useToast();
+  const [order, setOrder] = useState<SectionId[]>(DEFAULT_ORDER);
+  const [visibility, setVisibility] = useState<Record<SectionId, boolean>>(DEFAULT_VIS);
+  const [saving, setSaving] = useState(false);
+  const [loaded, setLoaded] = useState(false);
+
+  useEffect(() => {
+    const token = getToken('admin') ?? getToken('subadmin') ?? '';
+    fetch('/api/admin/settings', { headers: { Authorization: `Bearer ${token}` } })
+      .then(r => r.json())
+      .then(d => {
+        if (Array.isArray(d.sectionOrder) && d.sectionOrder.length > 0) setOrder(d.sectionOrder as SectionId[]);
+        if (d.sectionVisibility) setVisibility({ ...DEFAULT_VIS, ...d.sectionVisibility });
+        setLoaded(true);
+      })
+      .catch(() => setLoaded(true));
+  }, []);
+
+  const sensors = useSensors(useSensor(PointerSensor), useSensor(TouchSensor));
+
+  const handleDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event;
+    if (over && active.id !== over.id) {
+      setOrder(prev => {
+        const oldIdx = prev.indexOf(active.id as SectionId);
+        const newIdx = prev.indexOf(over.id as SectionId);
+        return arrayMove(prev, oldIdx, newIdx);
+      });
+    }
+  };
+
+  const toggleVisibility = (id: SectionId) => {
+    setVisibility(prev => ({ ...prev, [id]: !prev[id] }));
+  };
+
+  const handleSave = async () => {
+    const token = getToken('admin') ?? getToken('subadmin') ?? '';
+    setSaving(true);
+    try {
+      const r = await fetch('/api/admin/settings', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ sectionOrder: order, sectionVisibility: visibility }),
+      });
+      if (!r.ok) throw new Error('Error al guardar');
+      toast({ title: 'Configuración guardada', description: 'Los clientes verán las secciones en el nuevo orden.' });
+    } catch (e: any) {
+      toast({ variant: 'destructive', title: 'Error', description: e.message });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (!loaded) return null;
+
+  return (
+    <Card className="bg-background border-border">
+      <CardHeader>
+        <CardTitle className="text-base flex items-center gap-2">
+          <Layers className="w-4 h-4" /> Orden y Visibilidad de Secciones
+        </CardTitle>
+        <p className="text-xs text-muted-foreground mt-1">
+          Arrastra para cambiar el orden. Activa o desactiva qué secciones ven los clientes.
+        </p>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+          <SortableContext items={order} strategy={verticalListSortingStrategy}>
+            {order.map(id => (
+              <SortableSectionItem
+                key={id}
+                id={id}
+                label={SECTION_LABELS[id] ?? id}
+                icon={SECTION_ICONS[id] ?? Tv}
+                visible={visibility[id] ?? true}
+                onToggleVisible={() => toggleVisibility(id)}
+              />
+            ))}
+          </SortableContext>
+        </DndContext>
+        <Button onClick={handleSave} disabled={saving} className="w-full mt-2">
+          {saving ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Guardando...</> : 'Guardar Configuración'}
+        </Button>
+      </CardContent>
+    </Card>
   );
 }
 
@@ -2894,20 +4689,13 @@ function AvatarsManager() {
     }
     const processedFile = await cropToSquare(file);
     const baseName = file.name.replace(/\.[^.]+$/, '');
-    const res = await fetch(`${BASE_URL}/api/storage/uploads/request-url`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name: processedFile.name, size: processedFile.size, contentType: 'image/jpeg' }),
+    const dataUrl = await new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result as string);
+      reader.onerror = () => reject(new Error(`Error al leer ${file.name}`));
+      reader.readAsDataURL(processedFile);
     });
-    if (!res.ok) {
-      const body = await res.json().catch(() => ({}));
-      throw new Error(body?.error ?? `Error al solicitar URL para ${file.name}`);
-    }
-    const { uploadURL, objectPath } = await res.json();
-    const putRes = await fetch(uploadURL, { method: 'PUT', body: processedFile, headers: { 'Content-Type': 'image/jpeg' } });
-    if (!putRes.ok) throw new Error(`Error al subir ${file.name}`);
-    const publicUrl = `${BASE_URL}/api/storage${objectPath}`;
-    await createAvatarMutation.mutateAsync({ data: { imageUrl: publicUrl, name: baseName || null } });
+    await createAvatarMutation.mutateAsync({ data: { imageUrl: dataUrl, name: baseName || null } });
   }, [cropToSquare, createAvatarMutation]);
 
   const handleFileChange = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -3008,10 +4796,10 @@ function AvatarsManager() {
   );
 }
 
-const BASE_API = (import.meta.env.VITE_API_URL || import.meta.env.BASE_URL || '').replace(/\/+$/, '');
+const BASE_API = BASE_URL;
 
 function getAdminToken(): string {
-  return (localStorage.getItem('supertv_token_admin') || localStorage.getItem('supertv_token_subadmin') || '');
+  return getToken('admin') || '';
 }
 
 interface SeriesRow {
@@ -3038,10 +4826,27 @@ function SeriesManager() {
   const [showSeasonForm, setShowSeasonForm] = useState<number | null>(null);
   const [searchQ, setSearchQ] = useState('');
   const [newSeasonForm, setNewSeasonForm] = useState({ seasonNumber: '1', title: '' });
-  const [newEpForm, setNewEpForm] = useState({ episodeNumber: '', title: '', filePath: '', description: '', thumbnail: '' });
+  const [newEpForm, setNewEpForm] = useState({ episodeNumber: '', title: '', filePath: '', videoFormat: '', description: '', thumbnail: '' });
   const [seriesScanUrl, setSeriesScanUrl] = useState('');
   const [scanningSeasons, setScanningSeasons] = useState(false);
   const [posterSearching, setPosterSearching] = useState(false);
+  const [showSmartImport, setShowSmartImport] = useState(false);
+  const [showYtPlaylist, setShowYtPlaylist] = useState(false);
+  const [ytUrl, setYtUrl] = useState('');
+  const [ytPreviewing, setYtPreviewing] = useState(false);
+  const [ytImporting, setYtImporting] = useState(false);
+  const [ytPreview, setYtPreview] = useState<{ playlistId: string; title: string; description: string; thumbnail: string; channelTitle: string; itemCount: number; items: Array<{ videoId: string; title: string; thumbnail: string; position: number }> } | null>(null);
+  const [ytForm, setYtForm] = useState({ title: '', category: '', genre: '', year: '', poster: '', banner: '' });
+  const [showYtManual, setShowYtManual] = useState(false);
+  const [ytManualTitle, setYtManualTitle] = useState('');
+  const [ytManualCategory, setYtManualCategory] = useState('');
+  const [ytManualLinks, setYtManualLinks] = useState<Array<{ url: string; title: string }>>([{ url: '', title: '' }]);
+  const [ytManualCreating, setYtManualCreating] = useState(false);
+  const [showYtBulk, setShowYtBulk] = useState<{ seriesId: number; seasonId: number; seasonEpCount: number } | null>(null);
+  const [ytBulkText, setYtBulkText] = useState('');
+  const [ytBulkAdding, setYtBulkAdding] = useState(false);
+  const [editEp, setEditEp] = useState<EpisodeRow | null>(null);
+  const [editEpSaving, setEditEpSaving] = useState(false);
 
   const form0: Partial<SeriesRow> = { title: '', description: '', poster: '', banner: '', category: '', genre: '', year: undefined, featured: false, hidden: false };
   const [createForm, setCreateForm] = useState<Partial<SeriesRow>>(form0);
@@ -3172,15 +4977,147 @@ function SeriesManager() {
   const handleAddEpisode = async () => {
     if (!showEpForm || !newEpForm.title || !newEpForm.filePath) { toast({ variant: 'destructive', title: 'Título y URL son requeridos' }); return; }
     const { seriesId, seasonId } = showEpForm;
-    const r = await fetch(`${BASE_API}/api/episodes`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${getAdminToken()}` }, body: JSON.stringify({ seriesId, seasonId, title: newEpForm.title, filePath: newEpForm.filePath, description: newEpForm.description || undefined, thumbnail: newEpForm.thumbnail || undefined, episodeNumber: newEpForm.episodeNumber ? Number(newEpForm.episodeNumber) : undefined }) });
-    if (r.ok) { toast({ title: 'Episodio creado' }); setShowEpForm(null); setNewEpForm({ episodeNumber: '', title: '', filePath: '', description: '', thumbnail: '' }); loadExpanded(seriesId); }
+    const r = await fetch(`${BASE_API}/api/episodes`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${getAdminToken()}` }, body: JSON.stringify({ seriesId, seasonId, title: newEpForm.title, filePath: newEpForm.filePath, videoFormat: newEpForm.videoFormat || undefined, description: newEpForm.description || undefined, thumbnail: newEpForm.thumbnail || undefined, episodeNumber: newEpForm.episodeNumber ? Number(newEpForm.episodeNumber) : undefined }) });
+    if (r.ok) { toast({ title: 'Episodio creado' }); setShowEpForm(null); setNewEpForm({ episodeNumber: '', title: '', filePath: '', videoFormat: '', description: '', thumbnail: '' }); loadExpanded(seriesId); }
     else toast({ variant: 'destructive', title: 'Error al crear episodio' });
   };
 
   const handleDeleteEpisode = async (epId: number, seriesId: number) => {
     if (!confirm('¿Eliminar este episodio?')) return;
     await fetch(`${BASE_API}/api/episodes/${epId}`, { method: 'DELETE', headers: { Authorization: `Bearer ${getAdminToken()}` } });
-    toast({ title: 'Episodio eliminado' }); loadExpanded(seriesId);
+    refresh();
+  };
+
+  const handleSaveEpisode = async () => {
+    if (!editEp) return;
+    setEditEpSaving(true);
+    const r = await fetch(`${BASE_API}/api/episodes/${editEp.id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${getAdminToken()}` },
+      body: JSON.stringify({
+        title: editEp.title,
+        filePath: editEp.filePath,
+        thumbnail: editEp.thumbnail || undefined,
+        episodeNumber: editEp.episodeNumber,
+      }),
+    });
+    setEditEpSaving(false);
+    if (r.ok) { toast({ title: 'Episodio actualizado' }); setEditEp(null); refresh(); }
+    else { const d = await r.json().catch(() => ({})); toast({ variant: 'destructive', title: (d as any).error || 'Error al guardar' }); }
+  };
+
+  const handleYtBulkAdd = async () => {
+    if (!showYtBulk) return;
+    const urls = ytBulkText.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+    if (urls.length === 0) { toast({ variant: 'destructive', title: 'Pega al menos un enlace de YouTube' }); return; }
+    setYtBulkAdding(true);
+    let ok = 0; let fail = 0;
+    const startNum = showYtBulk.seasonEpCount + 1;
+    for (let i = 0; i < urls.length; i++) {
+      const er = await fetch(`${BASE_API}/api/episodes`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${getAdminToken()}` },
+        body: JSON.stringify({
+          seriesId: showYtBulk.seriesId,
+          seasonId: showYtBulk.seasonId,
+          episodeNumber: startNum + i,
+          title: `Episodio ${startNum + i}`,
+          filePath: urls[i],
+          videoFormat: 'youtube',
+        }),
+      });
+      if (er.ok) ok++; else fail++;
+    }
+    if (fail > 0) toast({ variant: 'destructive', title: `${fail} episodio(s) fallaron`, description: `${ok} agregados correctamente` });
+    else toast({ title: `${ok} episodio(s) agregados` });
+    setShowYtBulk(null);
+    setYtBulkText('');
+    refresh();
+    setYtBulkAdding(false);
+  };
+
+  const handleYtPreview = async () => {
+    if (!ytUrl.trim()) return;
+    setYtPreviewing(true);
+    setYtPreview(null);
+    try {
+      const r = await fetch(`${BASE_API}/api/youtube/playlist-preview?url=${encodeURIComponent(ytUrl.trim())}`, { headers: { Authorization: `Bearer ${getAdminToken()}` } });
+      const data = await r.json();
+      if (!r.ok) { toast({ variant: 'destructive', title: data.error || 'Error al obtener la playlist' }); return; }
+      setYtPreview(data);
+      setYtForm(f => ({ ...f, title: f.title || data.title, poster: f.poster || data.thumbnail }));
+    } catch { toast({ variant: 'destructive', title: 'Error de red' }); }
+    finally { setYtPreviewing(false); }
+  };
+
+  const handleYtImport = async () => {
+    if (!ytPreview) return;
+    if (!ytForm.title.trim()) { toast({ variant: 'destructive', title: 'El título de la serie es requerido' }); return; }
+    setYtImporting(true);
+    try {
+      const r = await fetch(`${BASE_API}/api/youtube/import-playlist`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${getAdminToken()}` },
+        body: JSON.stringify({ playlistId: ytPreview.playlistId, title: ytForm.title, category: ytForm.category || undefined, genre: ytForm.genre || undefined, year: ytForm.year ? Number(ytForm.year) : undefined, poster: ytForm.poster || undefined, banner: ytForm.banner || undefined }),
+      });
+      const data = await r.json();
+      if (!r.ok) { toast({ variant: 'destructive', title: data.error || 'Error al importar' }); return; }
+      toast({ title: `Serie importada con ${data.episodesCreated} episodios` });
+      setShowYtPlaylist(false); setYtUrl(''); setYtPreview(null); setYtForm({ title: '', category: '', genre: '', year: '', poster: '', banner: '' });
+      refresh();
+    } catch { toast({ variant: 'destructive', title: 'Error de red' }); }
+    finally { setYtImporting(false); }
+  };
+
+  const handleYtManualCreate = async () => {
+    const validLinks = ytManualLinks.filter(l => l.url.trim());
+    if (!ytManualTitle.trim()) { toast({ variant: 'destructive', title: 'El título es requerido' }); return; }
+    if (validLinks.length === 0) { toast({ variant: 'destructive', title: 'Agrega al menos un enlace de YouTube' }); return; }
+    setYtManualCreating(true);
+    try {
+      const sr = await fetch(`${BASE_API}/api/series`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${getAdminToken()}` },
+        body: JSON.stringify({ title: ytManualTitle.trim(), category: ytManualCategory.trim() || undefined }),
+      });
+      if (!sr.ok) { toast({ variant: 'destructive', title: 'Error al crear la serie' }); setYtManualCreating(false); return; }
+      const series = await sr.json();
+      const snr = await fetch(`${BASE_API}/api/seasons`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${getAdminToken()}` },
+        body: JSON.stringify({ seriesId: series.id, seasonNumber: 1, title: 'Temporada 1' }),
+      });
+      if (!snr.ok) { toast({ variant: 'destructive', title: 'Error al crear temporada' }); setYtManualCreating(false); return; }
+      const season = await snr.json();
+      let epFailed = 0;
+      for (let i = 0; i < validLinks.length; i++) {
+        const link = validLinks[i];
+        const er = await fetch(`${BASE_API}/api/episodes`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${getAdminToken()}` },
+          body: JSON.stringify({
+            seriesId: series.id, seasonId: season.id,
+            episodeNumber: i + 1,
+            title: link.title.trim() || `Episodio ${i + 1}`,
+            filePath: link.url.trim(),
+            videoFormat: 'youtube',
+          }),
+        });
+        if (!er.ok) epFailed++;
+      }
+      if (epFailed > 0) {
+        toast({ variant: 'destructive', title: `${epFailed} episodio(s) no se pudieron crear` });
+      } else {
+        toast({ title: `Serie "${ytManualTitle.trim()}" creada con ${validLinks.length} episodio(s)` });
+      }
+      setShowYtManual(false);
+      setYtManualTitle(''); setYtManualCategory('');
+      setYtManualLinks([{ url: '', title: '' }]);
+      refresh();
+    } catch (e: unknown) {
+      toast({ variant: 'destructive', title: 'Error', description: e instanceof Error ? e.message : '' });
+    }
+    setYtManualCreating(false);
   };
 
   const filtered = seriesList.filter(s => !searchQ || s.title.toLowerCase().includes(searchQ.toLowerCase()));
@@ -3241,8 +5178,17 @@ function SeriesManager() {
       <div className="flex items-center justify-between flex-wrap gap-2">
         <h3 className="text-lg font-semibold flex items-center gap-2"><Tv2 className="w-5 h-5" /> Series ({seriesList.length})</h3>
         <div className="flex gap-2 flex-wrap">
+          <Button size="sm" variant="outline" onClick={() => setShowSmartImport(true)} className="flex items-center gap-1.5">
+            <Link2 className="w-4 h-4" /> Importar enlace
+          </Button>
           <Button size="sm" variant="outline" onClick={() => setShowScanner(p => !p)} className="flex items-center gap-1.5">
             <Globe className="w-4 h-4" /> Escanear URL
+          </Button>
+          <Button size="sm" variant="outline" onClick={() => { setShowYtPlaylist(p => !p); setYtPreview(null); }} className="flex items-center gap-1.5">
+            <Play className="w-4 h-4" /> Playlist YouTube
+          </Button>
+          <Button size="sm" variant="outline" onClick={() => setShowYtManual(p => !p)} className="flex items-center gap-1.5">
+            <Youtube className="w-4 h-4" /> Serie YouTube
           </Button>
           <Button size="sm" onClick={() => setShowCreate(true)} className="flex items-center gap-1.5">
             <Plus className="w-4 h-4" /> Nueva Serie
@@ -3259,6 +5205,134 @@ function SeriesManager() {
             <Button onClick={handleScanFolder} disabled={scanning || !scanUrl.trim()}>
               {scanning ? <Loader2 className="w-4 h-4 animate-spin" /> : <Search className="w-4 h-4" />}
               <span className="ml-1">Escanear</span>
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {showYtPlaylist && (
+        <div className="bg-secondary/30 rounded-xl p-4 space-y-4 border border-border">
+          <p className="text-sm font-medium flex items-center gap-2"><Play className="w-4 h-4 text-red-500" /> Importar serie desde playlist de YouTube</p>
+          <p className="text-xs text-muted-foreground">Pega la URL de una playlist de YouTube. Se creará una serie con todos los videos como episodios de la Temporada 1.</p>
+          <div className="flex gap-2">
+            <Input value={ytUrl} onChange={e => { setYtUrl(e.target.value); setYtPreview(null); }} placeholder="https://www.youtube.com/playlist?list=PL..." className="bg-background flex-1" />
+            <Button onClick={handleYtPreview} disabled={ytPreviewing || !ytUrl.trim()}>
+              {ytPreviewing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Search className="w-4 h-4" />}
+              <span className="ml-1">Vista previa</span>
+            </Button>
+          </div>
+
+          {ytPreview && (
+            <div className="space-y-4">
+              <div className="flex items-start gap-3 p-3 rounded-lg bg-background border border-border">
+                {ytPreview.thumbnail && <img src={ytPreview.thumbnail} alt={ytPreview.title} className="w-20 h-14 object-cover rounded flex-shrink-0" />}
+                <div className="flex-1 min-w-0">
+                  <p className="font-medium text-sm">{ytPreview.title}</p>
+                  <p className="text-xs text-muted-foreground">{ytPreview.channelTitle} · {ytPreview.itemCount} videos</p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <label className="text-xs text-muted-foreground">Título de la serie *</label>
+                  <Input value={ytForm.title} onChange={e => setYtForm(f => ({ ...f, title: e.target.value }))} className="bg-background" />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-xs text-muted-foreground">Categoría</label>
+                  <Input value={ytForm.category} onChange={e => setYtForm(f => ({ ...f, category: e.target.value }))} placeholder="Drama, Acción..." className="bg-background" />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-xs text-muted-foreground">Género</label>
+                  <Input value={ytForm.genre} onChange={e => setYtForm(f => ({ ...f, genre: e.target.value }))} placeholder="Drama" className="bg-background" />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-xs text-muted-foreground">Año</label>
+                  <Input type="number" value={ytForm.year} onChange={e => setYtForm(f => ({ ...f, year: e.target.value }))} placeholder="2024" className="bg-background" />
+                </div>
+                <div className="space-y-1 sm:col-span-2">
+                  <label className="text-xs text-muted-foreground">URL Poster</label>
+                  <Input value={ytForm.poster} onChange={e => setYtForm(f => ({ ...f, poster: e.target.value }))} className="bg-background" />
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <p className="text-xs font-medium text-muted-foreground">Episodios encontrados ({ytPreview.items.length})</p>
+                <div className="max-h-48 overflow-y-auto space-y-1 pr-1">
+                  {ytPreview.items.map((ep, i) => (
+                    <div key={ep.videoId} className="flex items-center gap-2 text-xs p-1.5 rounded bg-background/60">
+                      <span className="text-muted-foreground w-6 text-right flex-shrink-0">{i + 1}.</span>
+                      <img src={ep.thumbnail} alt="" className="w-10 h-7 object-cover rounded flex-shrink-0" />
+                      <span className="truncate">{ep.title}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div className="flex gap-2 justify-end">
+                <Button variant="outline" onClick={() => { setShowYtPlaylist(false); setYtUrl(''); setYtPreview(null); setYtForm({ title: '', category: '', genre: '', year: '', poster: '', banner: '' }); }}>Cancelar</Button>
+                <Button onClick={handleYtImport} disabled={ytImporting || !ytForm.title.trim()}>
+                  {ytImporting ? <Loader2 className="w-4 h-4 animate-spin mr-1" /> : null}
+                  Importar {ytPreview.itemCount} episodios
+                </Button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {showYtManual && (
+        <div className="bg-secondary/30 rounded-xl p-4 space-y-4 border border-border">
+          <p className="text-sm font-medium flex items-center gap-2"><Youtube className="w-4 h-4 text-red-500" /> Crear serie con enlaces de YouTube</p>
+          <p className="text-xs text-muted-foreground">Escribe el título y pega los enlaces de YouTube en orden. Cada enlace será un capítulo.</p>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div className="space-y-1">
+              <label className="text-xs text-muted-foreground">Título de la serie *</label>
+              <Input value={ytManualTitle} onChange={e => setYtManualTitle(e.target.value)} placeholder="Ej: La Ley Divina" className="bg-background" />
+            </div>
+            <div className="space-y-1">
+              <label className="text-xs text-muted-foreground">Categoría</label>
+              <Input value={ytManualCategory} onChange={e => setYtManualCategory(e.target.value)} placeholder="Drama, Acción..." className="bg-background" />
+            </div>
+          </div>
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <label className="text-xs font-medium text-muted-foreground">
+                Capítulos ({ytManualLinks.filter(l => l.url.trim()).length} con enlace)
+              </label>
+              <Button size="sm" variant="outline" className="h-7 text-xs gap-1" onClick={() => setYtManualLinks(ls => [...ls, { url: '', title: '' }])}>
+                <Plus className="w-3 h-3" /> Añadir capítulo
+              </Button>
+            </div>
+            <div className="space-y-2 max-h-80 overflow-y-auto pr-1">
+              {ytManualLinks.map((link, i) => (
+                <div key={i} className="flex items-center gap-2">
+                  <span className="text-xs text-muted-foreground w-6 text-right flex-shrink-0 font-medium">{i + 1}.</span>
+                  <Input
+                    value={link.url}
+                    onChange={e => setYtManualLinks(ls => ls.map((l, j) => j === i ? { ...l, url: e.target.value } : l))}
+                    placeholder="https://www.youtube.com/watch?v=..."
+                    className="bg-background text-xs h-8 flex-1 min-w-0"
+                  />
+                  <Input
+                    value={link.title}
+                    onChange={e => setYtManualLinks(ls => ls.map((l, j) => j === i ? { ...l, title: e.target.value } : l))}
+                    placeholder={`Capítulo ${i + 1}`}
+                    className="bg-background text-xs h-8 w-32 flex-shrink-0"
+                  />
+                  {ytManualLinks.length > 1 && (
+                    <Button size="sm" variant="ghost" className="h-8 w-8 p-0 text-destructive hover:text-destructive flex-shrink-0" onClick={() => setYtManualLinks(ls => ls.filter((_, j) => j !== i))}>
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </Button>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+          <div className="flex gap-2 justify-end">
+            <Button variant="outline" onClick={() => { setShowYtManual(false); setYtManualTitle(''); setYtManualCategory(''); setYtManualLinks([{ url: '', title: '' }]); }}>Cancelar</Button>
+            <Button onClick={handleYtManualCreate} disabled={ytManualCreating || !ytManualTitle.trim() || ytManualLinks.filter(l => l.url.trim()).length === 0}>
+              {ytManualCreating ? <Loader2 className="w-4 h-4 animate-spin mr-1" /> : null}
+              Crear Serie ({ytManualLinks.filter(l => l.url.trim()).length} cap.)
             </Button>
           </div>
         </div>
@@ -3347,10 +5421,30 @@ function SeriesManager() {
                       <div className="flex items-center justify-between gap-2 p-2.5 bg-card">
                         <p className="text-sm font-medium">{season.title || `Temporada ${season.seasonNumber}`} <span className="text-xs text-muted-foreground font-normal">({season.episodes.length} ep.)</span></p>
                         <div className="flex gap-1">
-                          <Button size="sm" variant="ghost" className="h-7 text-xs gap-1 px-2" onClick={() => setShowEpForm({ seriesId: series.id, seasonId: season.id })}><Plus className="w-3 h-3" /> Episodio</Button>
+                          <Button size="sm" variant="ghost" className="h-7 text-xs gap-1 px-2" onClick={() => { setShowYtBulk({ seriesId: series.id, seasonId: season.id, seasonEpCount: season.episodes.length }); setYtBulkText(''); setShowEpForm(null); }}><Youtube className="w-3 h-3 text-red-500" /> YouTube</Button>
+                          <Button size="sm" variant="ghost" className="h-7 text-xs gap-1 px-2" onClick={() => { setShowEpForm({ seriesId: series.id, seasonId: season.id }); setShowYtBulk(null); }}><Plus className="w-3 h-3" /> Episodio</Button>
                           <Button size="sm" variant="ghost" className="h-7 w-7 p-0 text-destructive hover:text-destructive" onClick={() => handleDeleteSeason(season.id, series.id)}><Trash2 className="w-3.5 h-3.5" /></Button>
                         </div>
                       </div>
+                      {showYtBulk?.seasonId === season.id && (
+                        <div className="p-3 border-t border-border bg-background/60 space-y-2">
+                          <p className="text-xs font-medium text-red-500">Agregar episodios YouTube en masa</p>
+                          <p className="text-[10px] text-muted-foreground">Pega un enlace de YouTube por línea. Se agregarán como episodios continuando desde el E{season.episodes.length + 1}.</p>
+                          <textarea
+                            className="w-full bg-background border border-border rounded text-xs p-2 h-28 resize-none font-mono"
+                            placeholder={"https://youtu.be/abc123\nhttps://youtu.be/def456\nhttps://youtu.be/ghi789"}
+                            value={ytBulkText}
+                            onChange={e => setYtBulkText(e.target.value)}
+                          />
+                          <div className="flex gap-2">
+                            <Button size="sm" onClick={handleYtBulkAdd} disabled={ytBulkAdding || !ytBulkText.trim()} className="h-8 text-xs bg-red-600 hover:bg-red-700">
+                              {ytBulkAdding ? <Loader2 className="w-3 h-3 animate-spin mr-1" /> : null}
+                              Agregar {ytBulkText.split('\n').filter(l => l.trim()).length} ep.
+                            </Button>
+                            <Button size="sm" variant="ghost" onClick={() => setShowYtBulk(null)} className="h-8 text-xs">Cancelar</Button>
+                          </div>
+                        </div>
+                      )}
                       {showEpForm?.seasonId === season.id && (
                         <div className="p-3 border-t border-border bg-background/60 space-y-2">
                           <p className="text-xs font-medium">Nuevo episodio</p>
@@ -3358,6 +5452,16 @@ function SeriesManager() {
                             <Input type="number" value={newEpForm.episodeNumber} onChange={e => setNewEpForm(p => ({ ...p, episodeNumber: e.target.value }))} placeholder="N° episodio" className="bg-background text-xs h-8" />
                             <Input value={newEpForm.title} onChange={e => setNewEpForm(p => ({ ...p, title: e.target.value }))} placeholder="Título *" className="bg-background text-xs h-8" />
                             <Input value={newEpForm.filePath} onChange={e => setNewEpForm(p => ({ ...p, filePath: e.target.value }))} placeholder="URL del video *" className="bg-background text-xs h-8 col-span-2" />
+                            <div className="col-span-2 flex items-center gap-2">
+                              <label className="text-xs text-muted-foreground shrink-0">Formato:</label>
+                              <select className="text-xs bg-background border border-border rounded px-2 py-1 h-8 flex-1" value={newEpForm.videoFormat} onChange={e => setNewEpForm(p => ({ ...p, videoFormat: e.target.value }))}>
+                                <option value="">Auto-detectar</option>
+                                <option value="hls">HLS (.m3u8)</option>
+                                <option value="dash">DASH (.mpd)</option>
+                                <option value="native">Nativo (MP4, WebM…)</option>
+                                <option value="flv">FLV</option>
+                              </select>
+                            </div>
                             <Input value={newEpForm.description} onChange={e => setNewEpForm(p => ({ ...p, description: e.target.value }))} placeholder="Descripción (opcional)" className="bg-background text-xs h-8 col-span-2" />
                             <Input value={newEpForm.thumbnail} onChange={e => setNewEpForm(p => ({ ...p, thumbnail: e.target.value }))} placeholder="URL thumbnail (opcional)" className="bg-background text-xs h-8 col-span-2" />
                           </div>
@@ -3370,13 +5474,45 @@ function SeriesManager() {
                       {season.episodes.length > 0 && (
                         <div className="divide-y divide-border">
                           {season.episodes.map(ep => (
-                            <div key={ep.id} className="flex items-center gap-2 px-3 py-2 hover:bg-muted/30 transition-colors">
-                              <span className="text-xs text-muted-foreground w-6 flex-shrink-0">E{ep.episodeNumber}</span>
-                              <div className="flex-1 min-w-0">
-                                <p className="text-xs font-medium truncate">{ep.title}</p>
-                                <p className="text-[10px] text-muted-foreground truncate">{ep.filePath}</p>
+                            <div key={ep.id}>
+                              <div className="flex items-center gap-2 px-3 py-2 hover:bg-muted/30 transition-colors">
+                                <span className="text-xs text-muted-foreground w-6 flex-shrink-0">E{ep.episodeNumber}</span>
+                                <div className="flex-1 min-w-0">
+                                  <p className="text-xs font-medium truncate">{ep.title}</p>
+                                  <p className="text-[10px] text-muted-foreground truncate">{ep.filePath}</p>
+                                  {ep.thumbnail && <p className="text-[10px] text-blue-400 truncate">🖼 {ep.thumbnail}</p>}
+                                </div>
+                                <Button size="sm" variant="ghost" className="h-7 w-7 p-0 flex-shrink-0" onClick={() => setEditEp(editEp?.id === ep.id ? null : { ...ep })}><Pencil className="w-3.5 h-3.5" /></Button>
+                                <Button size="sm" variant="ghost" className="h-7 w-7 p-0 text-destructive hover:text-destructive flex-shrink-0" onClick={() => handleDeleteEpisode(ep.id, series.id)}><Trash2 className="w-3.5 h-3.5" /></Button>
                               </div>
-                              <Button size="sm" variant="ghost" className="h-7 w-7 p-0 text-destructive hover:text-destructive flex-shrink-0" onClick={() => handleDeleteEpisode(ep.id, series.id)}><Trash2 className="w-3.5 h-3.5" /></Button>
+                              {editEp?.id === ep.id && (
+                                <div className="px-3 pb-3 pt-1 bg-muted/20 border-t border-border space-y-2">
+                                  <div className="grid grid-cols-2 gap-2">
+                                    <div className="space-y-1">
+                                      <label className="text-[10px] text-muted-foreground">N° episodio</label>
+                                      <Input type="number" value={editEp.episodeNumber} onChange={e => setEditEp(p => p ? { ...p, episodeNumber: Number(e.target.value) } : p)} className="bg-background text-xs h-8" />
+                                    </div>
+                                    <div className="space-y-1">
+                                      <label className="text-[10px] text-muted-foreground">Título</label>
+                                      <Input value={editEp.title} onChange={e => setEditEp(p => p ? { ...p, title: e.target.value } : p)} className="bg-background text-xs h-8" />
+                                    </div>
+                                  </div>
+                                  <div className="space-y-1">
+                                    <label className="text-[10px] text-muted-foreground">URL del video (YouTube u otro)</label>
+                                    <Input value={editEp.filePath} onChange={e => setEditEp(p => p ? { ...p, filePath: e.target.value } : p)} placeholder="https://youtube.com/watch?v=..." className="bg-background text-xs h-8 font-mono" />
+                                  </div>
+                                  <div className="space-y-1">
+                                    <label className="text-[10px] text-muted-foreground">URL de imagen/miniatura (opcional)</label>
+                                    <Input value={editEp.thumbnail || ''} onChange={e => setEditEp(p => p ? { ...p, thumbnail: e.target.value } : p)} placeholder="https://i.ytimg.com/vi/..." className="bg-background text-xs h-8" />
+                                  </div>
+                                  <div className="flex gap-2">
+                                    <Button size="sm" onClick={handleSaveEpisode} disabled={editEpSaving} className="h-8 text-xs">
+                                      {editEpSaving ? <Loader2 className="w-3 h-3 animate-spin mr-1" /> : null} Guardar
+                                    </Button>
+                                    <Button size="sm" variant="ghost" onClick={() => setEditEp(null)} className="h-8 text-xs">Cancelar</Button>
+                                  </div>
+                                </div>
+                              )}
                             </div>
                           ))}
                         </div>
@@ -3389,6 +5525,12 @@ function SeriesManager() {
           ))}
         </div>
       )}
+
+      <SmartLinkImport
+        open={showSmartImport}
+        onClose={() => setShowSmartImport(false)}
+        onImported={() => refresh()}
+      />
 
       <Dialog open={!!editSeries} onOpenChange={(o) => !o && setEditSeries(null)}>
         <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto bg-card border-border">

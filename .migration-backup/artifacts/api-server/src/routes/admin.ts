@@ -11,10 +11,14 @@ import {
 import { count, sql, desc } from "drizzle-orm";
 import { requireSuperAdmin } from "../lib/auth.js";
 import { channelTracker } from "../lib/tracker.js";
+import { cache } from "../lib/cache.js";
 
 const router = Router();
 
 router.get("/admin/stats", requireSuperAdmin, async (req: Request, res: Response) => {
+  const cached = cache.get<object>("admin:stats");
+  if (cached) { res.json(cached); return; }
+
   const now = new Date();
   const twoMinutesAgo = new Date(now.getTime() - 2 * 60_000);
   const fifteenMinutesAgo = new Date(now.getTime() - 15 * 60_000);
@@ -76,7 +80,7 @@ router.get("/admin/stats", requireSuperAdmin, async (req: Request, res: Response
 
   const topChannels = channelTracker.getTop(10);
 
-  res.json({
+  const payload = {
     totalCodes: codesResult?.total ?? 0,
     activeCodes: activeCodesResult?.count ?? 0,
     expiredCodes: expiredCodesResult?.count ?? 0,
@@ -97,7 +101,9 @@ router.get("/admin/stats", requireSuperAdmin, async (req: Request, res: Response
       codeCode: s.codeCode ?? null,
     })),
     topChannels,
-  });
+  };
+  cache.set("admin:stats", payload, 60_000);
+  res.json(payload);
 });
 
 export default router;

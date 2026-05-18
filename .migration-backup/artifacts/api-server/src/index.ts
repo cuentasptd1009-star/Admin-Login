@@ -21,8 +21,13 @@ async function start() {
     await runMigrations();
     logger.info("Database migrations applied");
   } catch (err) {
-    logger.error({ err }, "Failed to run database migrations");
-    process.exit(1);
+    const msg = err instanceof Error ? err.message : String(err);
+    if (msg.includes("already exists")) {
+      logger.info("Schema already up to date, skipping migrations");
+    } else {
+      logger.error({ err }, "Failed to run database migrations");
+      process.exit(1);
+    }
   }
 
   app.listen(port, (err) => {
