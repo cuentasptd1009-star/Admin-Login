@@ -56,6 +56,8 @@ export function YouTubePlayerPage({ videoId, title, onBack, isFav, onFavToggle, 
   const [duration, setDuration] = useState(0);
   const [showNextEp, setShowNextEp] = useState(false);
   const [coverBars, setCoverBars] = useState(true);
+  // D-pad control focus: 0=skip-10, 1=play/pause, 2=skip+10, 3=fullscreen, -1=none
+  const [ctrlFocusIdx, setCtrlFocusIdx] = useState(-1);
 
   // Reset next-ep state whenever the video changes
   useEffect(() => {
@@ -74,8 +76,9 @@ export function YouTubePlayerPage({ videoId, title, onBack, isFav, onFavToggle, 
 
   const flashControls = useCallback(() => {
     setCtrlVisible(true);
+    setCtrlFocusIdx(1); // default focus: play/pause
     if (ctrlTimerRef.current) clearTimeout(ctrlTimerRef.current);
-    ctrlTimerRef.current = setTimeout(() => setCtrlVisible(false), 3500);
+    ctrlTimerRef.current = setTimeout(() => { setCtrlVisible(false); setCtrlFocusIdx(-1); }, 4000);
   }, []);
 
   // Poll current time while playing + save progress every ~5s
@@ -215,6 +218,17 @@ export function YouTubePlayerPage({ videoId, title, onBack, isFav, onFavToggle, 
     };
   }, []);
 
+  // Keep container focused so keyboard events never go to the YouTube iframe
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    el.focus();
+    // Re-focus whenever window regains focus (e.g. after iframe interaction)
+    const onFocus = () => el.focus();
+    window.addEventListener('focus', onFocus);
+    return () => window.removeEventListener('focus', onFocus);
+  }, []);
+
   // Request native fullscreen as soon as possible (component mounted from a user gesture)
   useEffect(() => {
     const tryFullscreen = () => {
@@ -309,48 +323,87 @@ export function YouTubePlayerPage({ videoId, title, onBack, isFav, onFavToggle, 
     }
   }, [flashControls, startFrom]);
 
-  // Keyboard navigation - TV remote friendly
+  // Keyboard / D-pad navigation — capture: true so iframe never steals events
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       const tag = (document.activeElement as HTMLElement)?.tagName?.toUpperCase();
       if (tag === 'INPUT' || tag === 'TEXTAREA') return;
+
+      // Keep our container focused
+      containerRef.current?.focus({ preventScroll: true });
+
+      // End-screen navigation
+      if (ytEnded) {
+        switch (e.key) {
+          case 'ArrowLeft':  e.preventDefault(); setEndBtnIndex(0); break;
+          case 'ArrowRight': e.preventDefault(); setEndBtnIndex(1); break;
+          case 'Enter': case ' ':
+            e.preventDefault();
+            if (showNextEp && onNextEpisode) { onNextEpisode(); break; }
+            if (endBtnIndex === 0) {
+              ytPlayerRef.current?.seekTo(0, true);
+              ytPlayerRef.current?.playVideo();
+              setHasStarted(true); setYtEnded(false); setShowNextEp(false);
+            } else { onBack(); }
+            break;
+          case 'Escape': case 'Backspace': e.preventDefault(); onBack(); break;
+        }
+        return;
+      }
+
       switch (e.key) {
         case 'ArrowLeft':
           e.preventDefault();
-          if (ytEnded) { setEndBtnIndex(0); } else { skip(-10); }
+          if (ctrlFocusIdx >= 0) {
+            // D-pad: navigate controls left (wrap: 0=skip-10, 1=play, 2=skip+10, 3=fullscreen)
+            setCtrlFocusIdx(p => (p - 1 + 4) % 4);
+            flashControls();
+          } else {
+            skip(-10);
+            flashControls();
+          }
           break;
         case 'ArrowRight':
           e.preventDefault();
-          if (ytEnded) { setEndBtnIndex(1); } else { skip(10); }
+          if (ctrlFocusIdx >= 0) {
+            setCtrlFocusIdx(p => (p + 1) % 4);
+            flashControls();
+          } else {
+            skip(10);
+            flashControls();
+          }
           break;
         case 'ArrowUp':
+          // Up = enter fullscreen (expand)
           e.preventDefault();
-          if (!ytEnded) skip(30);
+          if (!isFullscreen) { doToggleFullscreen(); }
+          flashControls();
           break;
         case 'ArrowDown':
+          // Down = exit fullscreen (minimize)
           e.preventDefault();
-          if (!ytEnded) skip(-30);
+          if (isFullscreen) { doToggleFullscreen(); }
+          flashControls();
           break;
         case ' ':
         case 'Enter':
           e.preventDefault();
-          if (showNextEp && !ytEnded && onNextEpisode) {
-            onNextEpisode();
-          } else if (ytEnded) {
-            if (showNextEp && onNextEpisode) {
-              onNextEpisode();
-            } else if (endBtnIndex === 0) {
-              ytPlayerRef.current?.seekTo(0, true);
-              ytPlayerRef.current?.playVideo();
-              setHasStarted(true);
-              setYtEnded(false);
-            } else {
-              onBack();
+          if (ctrlFocusIdx >= 0) {
+            // Activate focused control
+            switch (ctrlFocusIdx) {
+              case 0: skip(-10); break;
+              case 1: if (!hasStarted) startPlayback(); else togglePlay(); break;
+              case 2: skip(10); break;
+              case 3: doToggleFullscreen(); break;
             }
+            flashControls();
+          } else if (showNextEp && onNextEpisode) {
+            onNextEpisode();
           } else if (!hasStarted) {
             startPlayback();
           } else {
             togglePlay();
+            flashControls();
           }
           break;
         case 'f':
@@ -372,10 +425,10 @@ export function YouTubePlayerPage({ videoId, title, onBack, isFav, onFavToggle, 
           break;
       }
     };
-    window.addEventListener('keydown', handler);
-    return () => window.removeEventListener('keydown', handler);
+    window.addEventListener('keydown', handler, { capture: true });
+    return () => window.removeEventListener('keydown', handler, { capture: true });
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ytEnded, endBtnIndex, hasStarted, showNextEp, skip, togglePlay, startPlayback, doToggleFullscreen, isNativeFullscreen, isCssFullscreen, onBack, onNextEpisode]);
+  }, [ytEnded, endBtnIndex, hasStarted, showNextEp, ctrlFocusIdx, skip, togglePlay, startPlayback, doToggleFullscreen, flashControls, isNativeFullscreen, isCssFullscreen, isFullscreen, onBack, onNextEpisode]);
 
   const progress = duration > 0 ? (currentTime / duration) * 100 : 0;
   const ctrlBtn = 'w-11 h-11 rounded-xl bg-black/50 backdrop-blur border border-white/15 text-white flex items-center justify-center active:scale-95 transition-all';
@@ -383,12 +436,14 @@ export function YouTubePlayerPage({ videoId, title, onBack, isFav, onFavToggle, 
   return (
     <div
       ref={containerRef}
-      className="bg-black overflow-hidden"
+      tabIndex={-1}
+      className="bg-black overflow-hidden outline-none"
       style={isCssFullscreen
         ? { position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, width: '100%', height: '100%', zIndex: 9999 }
         : { position: 'relative', width: '100%', height: '100vh' }}
       onMouseMove={() => { if (hasStarted) flashControls(); }}
       onTouchStart={() => { if (hasStarted) flashControls(); }}
+      onClick={() => containerRef.current?.focus({ preventScroll: true })}
     >
       {/* YouTube iframe mounts here */}
       <div
@@ -400,7 +455,12 @@ export function YouTubePlayerPage({ videoId, title, onBack, isFav, onFavToggle, 
       {hasStarted && (
         <div
           className="absolute inset-0 z-10 cursor-pointer"
-          onClick={e => { e.stopPropagation(); flashControls(); togglePlay(); }}
+          onClick={e => {
+            e.stopPropagation();
+            flashControls();
+            togglePlay();
+            containerRef.current?.focus({ preventScroll: true });
+          }}
         />
       )}
 
@@ -535,16 +595,16 @@ export function YouTubePlayerPage({ videoId, title, onBack, isFav, onFavToggle, 
           {/* Playback row */}
           <div className="flex items-center justify-between pb-1">
             <button
-              onClick={e => { e.stopPropagation(); skip(-10); }}
-              className={ctrlBtn}
+              onClick={e => { e.stopPropagation(); skip(-10); containerRef.current?.focus({ preventScroll: true }); }}
+              className={`${ctrlBtn} ${ctrlFocusIdx === 0 ? 'ring-2 ring-white scale-110 bg-white/20' : ''}`}
               title="-10s"
             >
               <SkipBack className="w-5 h-5" />
             </button>
 
             <button
-              onClick={e => { e.stopPropagation(); togglePlay(); }}
-              className="w-14 h-14 rounded-full bg-red-600 text-white flex items-center justify-center shadow-lg active:scale-95 transition-all hover:bg-red-500"
+              onClick={e => { e.stopPropagation(); togglePlay(); containerRef.current?.focus({ preventScroll: true }); }}
+              className={`w-14 h-14 rounded-full bg-red-600 text-white flex items-center justify-center shadow-lg active:scale-95 transition-all hover:bg-red-500 ${ctrlFocusIdx === 1 ? 'ring-4 ring-white scale-110' : ''}`}
             >
               {isPlaying
                 ? <Pause className="w-7 h-7 fill-white" />
@@ -552,8 +612,8 @@ export function YouTubePlayerPage({ videoId, title, onBack, isFav, onFavToggle, 
             </button>
 
             <button
-              onClick={e => { e.stopPropagation(); skip(10); }}
-              className={ctrlBtn}
+              onClick={e => { e.stopPropagation(); skip(10); containerRef.current?.focus({ preventScroll: true }); }}
+              className={`${ctrlBtn} ${ctrlFocusIdx === 2 ? 'ring-2 ring-white scale-110 bg-white/20' : ''}`}
               title="+10s"
             >
               <SkipForward className="w-5 h-5" />
@@ -571,13 +631,20 @@ export function YouTubePlayerPage({ videoId, title, onBack, isFav, onFavToggle, 
             )}
 
             <button
-              onClick={toggleFullscreen}
-              className={ctrlBtn}
+              onClick={e => { e.stopPropagation(); doToggleFullscreen(); containerRef.current?.focus({ preventScroll: true }); }}
+              className={`${ctrlBtn} ${ctrlFocusIdx === 3 ? 'ring-2 ring-white scale-110 bg-white/20' : ''}`}
               title={isFullscreen ? 'Salir de pantalla completa' : 'Pantalla completa'}
             >
               {isFullscreen ? <Minimize2 className="w-5 h-5" /> : <Maximize2 className="w-5 h-5" />}
             </button>
           </div>
+
+          {/* D-pad hint */}
+          {ctrlFocusIdx >= 0 && (
+            <p className="text-center text-[10px] text-white/30 pb-1 select-none">
+              ← → navegar · Enter seleccionar · ↑ pantalla completa · ↓ minimizar
+            </p>
+          )}
         </div>
       </div>
 

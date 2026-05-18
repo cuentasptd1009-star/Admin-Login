@@ -877,6 +877,13 @@ export default function Home() {
         return;
       }
 
+      // Blur any focused button/link so arrow keys always reach our handler
+      if (['ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(e.key)) {
+        if (activeEl && activeEl !== document.body && (activeEl as HTMLElement).blur) {
+          (activeEl as HTMLElement).blur();
+        }
+      }
+
       const goToSidebar = () => {
         const idx = sidebarItems.findIndex(it => it.kind === 'tab' && it.key === activeTab);
         setSidebarIdx(idx >= 0 ? idx : 0);
@@ -1101,8 +1108,8 @@ export default function Home() {
         }
       }
     };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
+    window.addEventListener('keydown', handleKeyDown, { capture: true });
+    return () => window.removeEventListener('keydown', handleKeyDown, { capture: true });
   }, [zone, sidebarIdx, sidebarItems, rowIndex, colIndex, heroBtnIndex, heroBannerIdx, activeRows, seriesRows, activeTab, playItem, playSeriesItem, actionButtons, showProfile, showHint, showShortcutHint, isListening, startListening, stopListening, showHero, hoveredHero, heroBannerItems, openKeyboard, searchQuery, openProfile, catFilterIdx, channelRows, selectedChannelCategory]);  // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
