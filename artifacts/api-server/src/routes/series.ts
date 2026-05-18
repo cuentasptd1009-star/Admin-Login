@@ -312,10 +312,19 @@ router.delete("/seasons/:id", requireAdminAuth, async (req: Request, res: Respon
 });
 
 router.post("/episodes", requireAdminAuth, async (req: Request, res: Response) => {
-  const { seriesId, seasonId, episodeNumber, title, description, filePath, thumbnail, duration } = req.body;
+  const { seriesId, seasonId, episodeNumber, title, description, filePath, duration } = req.body;
   if (!seriesId || !seasonId || !title || !filePath) { res.status(400).json({ error: "Missing required fields" }); return; }
   const existing = await db.select({ count: episodesTable.id }).from(episodesTable).where(eq(episodesTable.seasonId, Number(seasonId)));
   const videoFormat = req.body.videoFormat ?? null;
+
+  // Auto-use series poster as thumbnail for YouTube episodes when no thumbnail is provided
+  let thumbnail = req.body.thumbnail || null;
+  const isYoutube = /youtube\.com|youtu\.be/i.test(String(filePath));
+  if (!thumbnail && isYoutube) {
+    const [series] = await db.select({ poster: seriesTable.poster }).from(seriesTable).where(eq(seriesTable.id, Number(seriesId))).limit(1);
+    if (series?.poster) thumbnail = series.poster;
+  }
+
   const [created] = await db.insert(episodesTable).values({
     seriesId: Number(seriesId), seasonId: Number(seasonId),
     episodeNumber: episodeNumber ? Number(episodeNumber) : existing.length + 1,

@@ -355,7 +355,8 @@ router.post("/youtube/import-playlist", requireAdminAuth, async (req: Request, r
       title: "Temporada 1",
     }).returning();
 
-    // Create episodes
+    // Create episodes — all share the series poster as thumbnail
+    const episodeThumbnail = series.poster || items[0]?.thumbnail || null;
     for (let i = 0; i < items.length; i++) {
       const ep = items[i];
       await db.insert(episodesTable).values({
@@ -365,7 +366,7 @@ router.post("/youtube/import-playlist", requireAdminAuth, async (req: Request, r
         title: ep.title,
         filePath: `https://www.youtube.com/watch?v=${ep.videoId}`,
         videoFormat: "youtube",
-        thumbnail: ep.thumbnail,
+        thumbnail: episodeThumbnail,
         order: i,
       });
     }
