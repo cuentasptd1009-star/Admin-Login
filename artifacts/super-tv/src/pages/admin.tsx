@@ -947,17 +947,22 @@ function SortableCategoryItem({ id, label }: { id: string; label: string }) {
   );
 }
 
-function SortableMovieRow({ mv, onEdit, onDelete }: {
+function SortableMovieRow({ mv, onEdit, onDelete, selected, onToggleSelect }: {
   mv: { id: number; title: string; category?: string | null; filePath: string };
   onEdit: () => void;
   onDelete: () => void;
+  selected?: boolean;
+  onToggleSelect?: () => void;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: mv.id });
   const style = { transform: CSS.Transform.toString(transform), transition, opacity: isDragging ? 0.5 : 1 };
   const publicUrl = `${window.location.origin}/pelicula/${mv.id}`;
   return (
-    <TableRow ref={setNodeRef} style={style}>
-      <TableCell>
+    <TableRow ref={setNodeRef} style={style} className={selected ? 'bg-primary/5' : ''}>
+      <TableCell className="w-8 pr-0 pl-3">
+        <input type="checkbox" className="accent-primary w-4 h-4 cursor-pointer" checked={!!selected} onChange={onToggleSelect} onClick={e => e.stopPropagation()} />
+      </TableCell>
+      <TableCell className="w-8 pl-0 pr-0">
         <button {...attributes} {...listeners} className="cursor-grab active:cursor-grabbing text-muted-foreground hover:text-foreground p-1 touch-none">
           <GripVertical className="w-4 h-4" />
         </button>
@@ -2395,6 +2400,7 @@ function MoviesManager() {
   const deleteMutation = useDeleteMovie();
 
   const [showForm, setShowForm] = useState(false);
+  const [selectedMovieIds, setSelectedMovieIds] = useState<Set<number>>(new Set());
   const [newMv, setNewMv] = useState({ title: '', filePath: '', videoFormat: '', category: '', description: '', poster: '' });
   const [editMv, setEditMv] = useState<{ id: number; title: string; filePath: string; videoFormat: string; category: string; description: string; poster: string } | null>(null);
   const [detectingFormat, setDetectingFormat] = useState(false);
@@ -2821,6 +2827,18 @@ function MoviesManager() {
     });
   };
 
+  const handleBulkDelete = async () => {
+    if (selectedMovieIds.size === 0) return;
+    if (!confirm(`¿Eliminar ${selectedMovieIds.size} película(s) seleccionada(s)? Esta acción no se puede deshacer.`)) return;
+    let deleted = 0;
+    for (const id of Array.from(selectedMovieIds)) {
+      try { await deleteMutation.mutateAsync({ id }); deleted++; } catch { /* ignore */ }
+    }
+    qc.invalidateQueries({ queryKey: getListMoviesQueryKey() });
+    setSelectedMovieIds(new Set());
+    toast({ title: `${deleted} película(s) eliminada(s)` });
+  };
+
   const updateDetected = (id: string, patch: Partial<DetectedMovie>) =>
     setDetectedMovies(prev => prev.map(m => m._id === id ? { ...m, ...patch } : m));
 
@@ -3009,6 +3027,11 @@ function MoviesManager() {
             <Button size="sm" variant="outline" onClick={() => { setShowYtBulkImport(true); setYtBulkText(''); setYtBulkDetected([]); setYtBulkResults(null); setYtBulkCategory(''); }}>
               <Youtube className="w-4 h-4 mr-2 text-red-500" />Lista URLs YouTube
             </Button>
+            {selectedMovieIds.size > 0 && (
+              <Button size="sm" variant="destructive" onClick={handleBulkDelete} disabled={deleteMutation.isPending}>
+                <Trash2 className="w-4 h-4 mr-2" />Eliminar {selectedMovieIds.size} seleccionada(s)
+              </Button>
+            )}
             <Button size="sm" onClick={() => setShowForm(!showForm)}><Plus className="w-4 h-4 mr-2" />Nueva Película</Button>
           </>}
           {moviesList.length > 1 && (
@@ -3639,7 +3662,13 @@ function MoviesManager() {
             <Table>
               <TableHeader>
                 <TableRow>
-                  {sortMode && <TableHead className="w-8"></TableHead>}
+                  <TableHead className="w-8 pr-0 pl-3">
+                    <input type="checkbox" className="accent-primary w-4 h-4 cursor-pointer"
+                      checked={displayMovies.length > 0 && displayMovies.every(m => selectedMovieIds.has(m.id))}
+                      onChange={e => { if (e.target.checked) setSelectedMovieIds(new Set(displayMovies.map(m => m.id))); else setSelectedMovieIds(new Set()); }}
+                    />
+                  </TableHead>
+                  <TableHead className="w-8"></TableHead>
                   <TableHead>Título</TableHead>
                   <TableHead>Categoría</TableHead>
                   <TableHead>Dominio</TableHead>
@@ -3653,10 +3682,12 @@ function MoviesManager() {
                     mv={mv}
                     onEdit={() => setEditMv({ id: mv.id, title: mv.title, filePath: mv.filePath, videoFormat: (mv as any).videoFormat || '', category: mv.category || '', description: mv.description || '', poster: mv.poster || '' })}
                     onDelete={() => handleDelete(mv.id)}
+                    selected={selectedMovieIds.has(mv.id)}
+                    onToggleSelect={() => setSelectedMovieIds(prev => { const next = new Set(prev); if (next.has(mv.id)) next.delete(mv.id); else next.add(mv.id); return next; })}
                   />
                 ))}
                 {moviesList.length === 0 && (
-                  <TableRow><TableCell colSpan={5} className="text-center text-muted-foreground py-8">Sin películas aún</TableCell></TableRow>
+                  <TableRow><TableCell colSpan={7} className="text-center text-muted-foreground py-8">Sin películas aún</TableCell></TableRow>
                 )}
               </TableBody>
             </Table>
