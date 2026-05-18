@@ -1,10 +1,11 @@
-# [Project name]
+# Super TV
 
-_Replace the heading above with the project's name, and this line with one sentence describing what this app does for users._
+A streaming platform (IPTV) app where users log in with an access code to watch live channels, movies, and series.
 
 ## Run & Operate
 
-- `pnpm --filter @workspace/api-server run dev` — run the API server (port 5000)
+- `pnpm --filter @workspace/api-server run dev` — run the API server (port 8080)
+- `pnpm --filter @workspace/super-tv run dev` — run the frontend (port 19603)
 - `pnpm run typecheck` — full typecheck across all packages
 - `pnpm run build` — typecheck + build all packages
 - `pnpm --filter @workspace/api-spec run codegen` — regenerate API hooks and Zod schemas from the OpenAPI spec
@@ -14,23 +15,42 @@ _Replace the heading above with the project's name, and this line with one sente
 ## Stack
 
 - pnpm workspaces, Node.js 24, TypeScript 5.9
+- Frontend: React + Vite + Wouter (routing) + TailwindCSS v4
 - API: Express 5
 - DB: PostgreSQL + Drizzle ORM
-- Validation: Zod (`zod/v4`), `drizzle-zod`
+- Validation: Zod, `drizzle-zod`
 - API codegen: Orval (from OpenAPI spec)
-- Build: esbuild (CJS bundle)
+- Build: esbuild (ESM bundle)
+- Video: HLS.js, FLV.js, Dash.js
 
 ## Where things live
 
-_Populate as you build — short repo map plus pointers to the source-of-truth file for DB schema, API contracts, theme files, etc._
+- `artifacts/super-tv/` — React + Vite frontend
+- `artifacts/api-server/` — Express API server
+- `lib/api-spec/openapi.yaml` — OpenAPI spec (source of truth for API contract)
+- `lib/api-client-react/src/generated/` — generated React Query hooks
+- `lib/api-zod/src/generated/` — generated Zod schemas
+- `lib/db/src/schema/` — Drizzle ORM schema
+- `lib/db/migrations/` — SQL migrations
+- `attached_assets/` — image assets referenced by the frontend
 
 ## Architecture decisions
 
-_Populate as you build — non-obvious choices a reader couldn't infer from the code (3-5 bullets)._
+- Code-based access auth — users log in with an access code, not email/password
+- Two admin roles: `admin` (full access) and `subadmin` (limited panel)
+- Video streaming via HLS/FLV/Dash depending on stream format
+- PWA-enabled with service worker and app manifest
+- TV keyboard navigation support built into the UI
 
 ## Product
 
-_Describe the high-level user-facing capabilities of this app once they exist._
+- Login with access code to access the streaming platform
+- Home screen with channels, movies, and series organized in rows
+- Live TV player with HLS/FLV/Dash stream support
+- VOD player for movies and series
+- Admin panel to manage channels, codes, users, packages
+- Subadmin panel for limited admin operations
+- PWA installable on Android and iOS
 
 ## User preferences
 
@@ -38,7 +58,9 @@ _Populate as you build — explicit user instructions worth remembering across s
 
 ## Gotchas
 
-_Populate as you build — sharp edges, "always run X before Y" rules._
+- Run `pnpm --filter @workspace/api-spec run codegen` after changing `lib/api-spec/openapi.yaml`
+- Then run `pnpm run typecheck:libs` to rebuild the lib declarations
+- The `api-zod` index must only export from `./generated/api` (not `./generated/types`) to avoid duplicate export conflicts
 
 ## Pointers
 
