@@ -1444,7 +1444,7 @@ export default function Home() {
                         {!externalSearchLoading && ytResults.length > 0 && <span className="text-xs text-white/25">{ytResults.length}</span>}
                       </div>
                       {ytResults.length > 0 && (
-                        <div className="flex gap-3 overflow-x-auto pb-3" style={{ scrollbarWidth: 'none' }}>
+                        <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 gap-3">
                           {ytResults.map((item) => (
                             <ContentCard
                               key={item.videoId}
@@ -1631,6 +1631,30 @@ export default function Home() {
                     );
                   }
                   const isExtRow = row.id === 'ext-yt' || row.id === 'ext-arch';
+                  if (isExtRow) {
+                    return (
+                      <section key={row.id} ref={(el) => { rowRefs.current[rIdx] = el; }}>
+                        <div className="flex items-center gap-3 mb-3">
+                          {row.emoji && <span className="text-base">{row.emoji}</span>}
+                          <h2 className="text-sm sm:text-base font-semibold text-white/70">{row.title}</h2>
+                          <span className="text-xs text-white/25">{row.items.length}</span>
+                        </div>
+                        <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 gap-3">
+                          {row.items.map((item) => {
+                            const ext = item as unknown as { id: number; title: string; poster?: string };
+                            return (
+                              <ContentCard
+                                key={item.id}
+                                title={ext.title}
+                                image={ext.poster ?? null}
+                                onClick={() => playItem(item)}
+                              />
+                            );
+                          })}
+                        </div>
+                      </section>
+                    );
+                  }
                   return (
                     <ContentRow
                       key={row.id}
@@ -1641,13 +1665,13 @@ export default function Home() {
                       focusedIndex={colIndex}
                       isFocusedRow={zone === 'rows' && rowIndex === rIdx}
                       onItemClick={playItem}
-                      onFavoriteToggle={isExtRow ? undefined : doToggleFav}
-                      progressMap={isExtRow ? undefined : progressMap}
-                      favSet={isExtRow ? undefined : favSet}
+                      onFavoriteToggle={doToggleFav}
+                      progressMap={progressMap}
+                      favSet={favSet}
                       isNewFn={row.showBadge ? isNew : undefined}
                       showProgress={row.showProgress}
-                      portrait={!isExtRow}
-                      onHoverItem={isExtRow ? undefined : (item) => setHoveredHero(item ? { ...item, type: 'movie' } : null)}
+                      portrait
+                      onHoverItem={(item) => setHoveredHero(item ? { ...item, type: 'movie' } : null)}
                     />
                   );
                 })}
