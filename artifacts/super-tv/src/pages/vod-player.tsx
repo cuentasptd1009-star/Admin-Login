@@ -34,10 +34,6 @@ function formatTime(s: number): string {
 export default function VodPlayerPage() {
   const [, setLocation] = useLocation();
 
-  useEffect(() => {
-    window.history.replaceState({}, '', window.location.pathname);
-  }, []);
-
   const sp = new URLSearchParams(window.location.search);
 
   const rawUrl = sp.get('url') || '';
