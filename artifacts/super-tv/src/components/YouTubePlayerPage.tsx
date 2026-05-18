@@ -55,11 +55,20 @@ export function YouTubePlayerPage({ videoId, title, onBack, isFav, onFavToggle, 
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
   const [showNextEp, setShowNextEp] = useState(false);
+  const [coverBars, setCoverBars] = useState(true);
 
   // Reset next-ep state whenever the video changes
   useEffect(() => {
     setShowNextEp(false);
+    setCoverBars(true);
   }, [videoId]);
+
+  // Once video starts, keep bars a moment longer then fade them out
+  useEffect(() => {
+    if (!hasStarted) return;
+    const t = setTimeout(() => setCoverBars(false), 2000);
+    return () => clearTimeout(t);
+  }, [hasStarted]);
 
   const isFullscreen = isNativeFullscreen || isCssFullscreen;
 
@@ -433,10 +442,15 @@ export function YouTubePlayerPage({ videoId, title, onBack, isFav, onFavToggle, 
         </div>
       )}
 
-      {/* Black bar at bottom — hides YouTube branding during load, disappears once playing */}
-      {!hasStarted && (
-        <div className="absolute bottom-0 inset-x-0 h-14 z-[14] bg-black pointer-events-none" />
-      )}
+      {/* Black bars — cover YouTube title/channel (top) and controls/logo (bottom) during load */}
+      <div
+        className="absolute top-0 inset-x-0 h-16 z-[14] bg-black pointer-events-none transition-opacity duration-700"
+        style={{ opacity: coverBars ? 1 : 0 }}
+      />
+      <div
+        className="absolute bottom-0 inset-x-0 h-16 z-[14] bg-black pointer-events-none transition-opacity duration-700"
+        style={{ opacity: coverBars ? 1 : 0 }}
+      />
 
 
 
