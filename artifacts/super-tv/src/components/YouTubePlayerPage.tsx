@@ -322,7 +322,10 @@ export function YouTubePlayerPage({ videoId, title, onBack, isFav, onFavToggle, 
   return (
     <div
       ref={containerRef}
-      className={`relative w-full bg-black overflow-hidden ${isCssFullscreen ? 'fixed inset-0 z-[9999]' : 'h-screen'}`}
+      className="bg-black overflow-hidden"
+      style={isCssFullscreen
+        ? { position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, width: '100%', height: '100%', zIndex: 9999 }
+        : { position: 'relative', width: '100%', height: '100vh' }}
       onMouseMove={() => { if (hasStarted) flashControls(); }}
       onTouchStart={() => { if (hasStarted) flashControls(); }}
     >
