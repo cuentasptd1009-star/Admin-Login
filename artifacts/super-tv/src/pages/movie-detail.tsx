@@ -166,8 +166,18 @@ export default function MovieDetail() {
   const handlePlay = (startFrom?: number) => {
     if (isExpired) { setShowExpiredOverlay(true); return; }
     if (!movie) return;
+    const url = movie.filePath ?? '';
+    const isYouTube = url.includes('youtube.com/') || url.includes('youtu.be/');
+    if (isYouTube) {
+      const ytMatch = url.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/)([^&\s?#]+)/);
+      const videoId = ytMatch?.[1] ?? null;
+      if (videoId) {
+        setExternalPlayer({ type: 'youtube', videoId, title: movie.title, thumbnail: movie.poster ?? undefined });
+        return;
+      }
+    }
     const p = new URLSearchParams({
-      url: movie.filePath,
+      url,
       title: movie.title,
       type: 'movie',
       movieId: String(movie.id),
@@ -404,13 +414,11 @@ export default function MovieDetail() {
       )}
 
       {externalPlayer && externalPlayer.type === 'youtube' && externalPlayer.videoId && (
-        <div className="fixed inset-0 z-[90]">
-          <YouTubePlayerPage
-            videoId={externalPlayer.videoId}
-            title={externalPlayer.title}
-            onBack={() => setExternalPlayer(null)}
-          />
-        </div>
+        <YouTubePlayerPage
+          videoId={externalPlayer.videoId}
+          title={externalPlayer.title}
+          onBack={() => setExternalPlayer(null)}
+        />
       )}
       {externalPlayer && externalPlayer.type === 'archive' && externalPlayer.url && (
         <div className="fixed inset-0 z-[90] bg-black flex flex-col items-center justify-center" onClick={() => setExternalPlayer(null)}>
