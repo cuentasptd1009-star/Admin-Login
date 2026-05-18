@@ -5469,7 +5469,11 @@ function SeriesManager() {
                           <div className="grid grid-cols-2 gap-2">
                             <Input type="number" value={newEpForm.episodeNumber} onChange={e => setNewEpForm(p => ({ ...p, episodeNumber: e.target.value }))} placeholder="N° episodio" className="bg-background text-xs h-8" />
                             <Input value={newEpForm.title} onChange={e => setNewEpForm(p => ({ ...p, title: e.target.value }))} placeholder="Título *" className="bg-background text-xs h-8" />
-                            <Input value={newEpForm.filePath} onChange={e => setNewEpForm(p => ({ ...p, filePath: e.target.value }))} placeholder="URL del video *" className="bg-background text-xs h-8 col-span-2" />
+                            <Input value={newEpForm.filePath} onChange={e => {
+                              const val = e.target.value;
+                              const ytId = extractYtVideoId(val);
+                              setNewEpForm(p => ({ ...p, filePath: val, ...(ytId && !p.thumbnail ? { thumbnail: `https://i.ytimg.com/vi/${ytId}/maxresdefault.jpg` } : {}) }));
+                            }} placeholder="URL del video * (YouTube → miniatura automática)" className="bg-background text-xs h-8 col-span-2" />
                             <div className="col-span-2 flex items-center gap-2">
                               <label className="text-xs text-muted-foreground shrink-0">Formato:</label>
                               <select className="text-xs bg-background border border-border rounded px-2 py-1 h-8 flex-1" value={newEpForm.videoFormat} onChange={e => setNewEpForm(p => ({ ...p, videoFormat: e.target.value }))}>
@@ -5481,7 +5485,11 @@ function SeriesManager() {
                               </select>
                             </div>
                             <Input value={newEpForm.description} onChange={e => setNewEpForm(p => ({ ...p, description: e.target.value }))} placeholder="Descripción (opcional)" className="bg-background text-xs h-8 col-span-2" />
-                            <Input value={newEpForm.thumbnail} onChange={e => setNewEpForm(p => ({ ...p, thumbnail: e.target.value }))} placeholder="URL thumbnail (opcional)" className="bg-background text-xs h-8 col-span-2" />
+                            <Input value={newEpForm.thumbnail} onChange={e => {
+                              const val = e.target.value;
+                              const ytId = extractYtVideoId(val);
+                              setNewEpForm(p => ({ ...p, thumbnail: ytId ? `https://i.ytimg.com/vi/${ytId}/maxresdefault.jpg` : val }));
+                            }} placeholder="URL thumbnail (o pega URL de YouTube)" className="bg-background text-xs h-8 col-span-2" />
                           </div>
                           <div className="flex gap-2">
                             <Button size="sm" onClick={handleAddEpisode} className="h-8 text-xs">Agregar</Button>
