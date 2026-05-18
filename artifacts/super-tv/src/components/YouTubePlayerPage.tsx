@@ -118,15 +118,15 @@ export function YouTubePlayerPage({ videoId, title, onBack, isFav, onFavToggle, 
             if (!destroyed) {
               const d = e.target.getDuration?.() ?? 0;
               if (d > 0) setDuration(d);
-              // Apply styles directly to the iframe YouTube creates so it fills the container
+              // Force the iframe YouTube creates to fill the container using explicit properties
               try {
-                const iframe = e.target.getIframe();
+                const iframe = e.target.getIframe() as HTMLIFrameElement | null;
                 if (iframe) {
-                  iframe.style.position = 'absolute';
-                  iframe.style.inset = '0';
-                  iframe.style.width = '100%';
-                  iframe.style.height = '100%';
-                  iframe.style.border = 'none';
+                  iframe.style.cssText = 'position:absolute;top:0;left:0;bottom:0;right:0;width:100%;height:100%;border:0;display:block;';
+                }
+                // Also force the container div to be properly positioned
+                if (playerDivRef.current) {
+                  playerDivRef.current.style.cssText = 'position:absolute;top:0;left:0;bottom:0;right:0;width:100%;height:100%;';
                 }
               } catch {}
               // Mobile browsers block autoplay without a direct user gesture.
@@ -329,7 +329,7 @@ export function YouTubePlayerPage({ videoId, title, onBack, isFav, onFavToggle, 
       {/* YouTube iframe mounts here */}
       <div
         ref={playerDivRef}
-        className="absolute inset-0 w-full h-full [&>iframe]:absolute [&>iframe]:inset-0 [&>iframe]:w-full [&>iframe]:h-full [&>iframe]:border-0"
+        style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, width: '100%', height: '100%' }}
       />
 
       {/* Click catcher to block YouTube UI when playing */}
