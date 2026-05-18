@@ -56,6 +56,11 @@ export function YouTubePlayerPage({ videoId, title, onBack, isFav, onFavToggle, 
   const [duration, setDuration] = useState(0);
   const [showNextEp, setShowNextEp] = useState(false);
 
+  // Reset next-ep state whenever the video changes
+  useEffect(() => {
+    setShowNextEp(false);
+  }, [videoId]);
+
   const isFullscreen = isNativeFullscreen || isCssFullscreen;
 
   const flashControls = useCallback(() => {
@@ -74,9 +79,13 @@ export function YouTubePlayerPage({ videoId, title, onBack, isFav, onFavToggle, 
         const d = yt.getDuration?.() ?? 0;
         setCurrentTime(t);
         if (d > 0) setDuration(d);
-        // Show next episode button 30 seconds before the end
-        if (nextEpisodeId && d > 60 && d - t <= 30 && t > 0) {
-          setShowNextEp(true);
+        // Show next episode button 30 seconds before the end (never at start)
+        if (nextEpisodeId && d > 60 && t > 30) {
+          if (d - t <= 30) {
+            setShowNextEp(true);
+          } else if (d - t > 30) {
+            setShowNextEp(false);
+          }
         }
         // Save progress every 5 seconds
         if (t > 10 && t - lastSaveRef.current >= 5) {
