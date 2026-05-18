@@ -152,12 +152,16 @@ export default function VodPlayerPage() {
       setCurrentTime(t);
       if (nextEpisodeId && isFinite(video.duration) && video.duration > 60) {
         const timeLeft = video.duration - t;
-        if (timeLeft <= 30) {
+        if (timeLeft <= 30 && t > 30) {
           setNextEpCountdown(Math.ceil(timeLeft));
           if (!showNextEp) {
             setShowNextEp(true);
             setNextEpFocused(true);
           }
+        } else if (showNextEp && timeLeft > 30) {
+          setShowNextEp(false);
+          setNextEpFocused(false);
+          setNextEpCountdown(0);
         }
       }
       const now = Date.now();
