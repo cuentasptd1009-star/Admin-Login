@@ -88,6 +88,12 @@ export default function VodPlayerPage() {
   const [nextEpCountdown, setNextEpCountdown] = useState(0);
   const [errorBtnIndex, setErrorBtnIndex] = useState(0);
 
+  useEffect(() => {
+    setShowNextEp(false);
+    setNextEpFocused(false);
+    setNextEpCountdown(0);
+  }, [episodeId, movieId]);
+
   const showControlsTemporarily = useCallback(() => {
     setShowControls(true);
     if (controlsTimeoutRef.current) clearTimeout(controlsTimeoutRef.current);
