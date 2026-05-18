@@ -74,8 +74,8 @@ export function YouTubePlayerPage({ videoId, title, onBack, isFav, onFavToggle, 
         const d = yt.getDuration?.() ?? 0;
         setCurrentTime(t);
         if (d > 0) setDuration(d);
-        // Show next episode button 20 seconds before the end
-        if (nextEpisodeId && d > 30 && d - t <= 20 && t > 0) {
+        // Show next episode button 30 seconds before the end
+        if (nextEpisodeId && d > 60 && d - t <= 30 && t > 0) {
           setShowNextEp(true);
         }
         // Save progress every 5 seconds

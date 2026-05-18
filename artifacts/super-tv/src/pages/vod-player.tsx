@@ -144,9 +144,9 @@ export default function VodPlayerPage() {
     const onTimeUpdate = () => {
       const t = video.currentTime;
       setCurrentTime(t);
-      if (nextEpisodeId && isFinite(video.duration) && video.duration > 30) {
+      if (nextEpisodeId && isFinite(video.duration) && video.duration > 60) {
         const timeLeft = video.duration - t;
-        if (timeLeft <= 20) {
+        if (timeLeft <= 30) {
           setNextEpCountdown(Math.ceil(timeLeft));
           if (!showNextEp) {
             setShowNextEp(true);
