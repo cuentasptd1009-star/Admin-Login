@@ -310,6 +310,29 @@ router.post("/channels/reorder", requireAdminAuth, async (req: Request, res: Res
   res.json({ success: true });
 });
 
+function rewriteM3u8(
+  text: string,
+  baseUrl: URL,
+  channelId: string,
+  token: string,
+): string {
+  return text
+    .split("\n")
+    .map((line) => {
+      const trimmed = line.trim();
+      if (trimmed === "" || trimmed.startsWith("#")) return line;
+      let absolute: string;
+      try {
+        absolute = new URL(trimmed, baseUrl).toString();
+      } catch {
+        return line;
+      }
+      const encoded = Buffer.from(absolute).toString("base64url");
+      return `/api/channels/${channelId}/hls-relay?s=${encoded}&token=${encodeURIComponent(token)}`;
+    })
+    .join("\n");
+}
+
 router.get("/channels/:id/hls-proxy", async (req: Request, res: Response) => {
   const auth = await checkHlsAuth(req, res);
   if (!auth.ok) return;
@@ -322,7 +345,24 @@ router.get("/channels/:id/hls-proxy", async (req: Request, res: Response) => {
 
   channelTracker.record(channel.id, channel.name);
 
-  res.redirect(302, channel.streamUrl);
+  try {
+    const upstream = await fetch(channel.streamUrl, {
+      headers: { "User-Agent": "Mozilla/5.0 (compatible; SuperTV/1.0)", Accept: "*/*" },
+      signal: AbortSignal.timeout(8000),
+    });
+    if (!upstream.ok) { res.status(502).send("Stream unavailable"); return; }
+
+    const text = await upstream.text();
+    const baseUrl = new URL(channel.streamUrl);
+    const rewritten = rewriteM3u8(text, baseUrl, String(parsed.data.id), auth.token || "");
+
+    res.setHeader("Content-Type", "application/vnd.apple.mpegurl");
+    res.setHeader("Cache-Control", "no-cache");
+    res.setHeader("Access-Control-Allow-Origin", "*");
+    res.send(rewritten);
+  } catch {
+    res.status(502).send("Failed to fetch stream");
+  }
 });
 
 router.get("/channels/:id/hls-relay", async (req: Request, res: Response) => {
@@ -348,7 +388,36 @@ router.get("/channels/:id/hls-relay", async (req: Request, res: Response) => {
     return;
   }
 
-  res.redirect(302, segUrl);
+  try {
+    const upstream = await fetch(segUrl, {
+      headers: { "User-Agent": "Mozilla/5.0 (compatible; SuperTV/1.0)", Accept: "*/*" },
+      signal: AbortSignal.timeout(15000),
+    });
+    if (!upstream.ok) { res.status(502).send("Segment unavailable"); return; }
+
+    const contentType = upstream.headers.get("content-type") || "";
+    const urlClean = segUrl.toLowerCase().split("?")[0];
+    const isManifest = contentType.includes("mpegurl") || urlClean.endsWith(".m3u8");
+
+    if (isManifest) {
+      const text = await upstream.text();
+      const baseUrl = new URL(segUrl);
+      const token = (req.query.token as string) || "";
+      const rewritten = rewriteM3u8(text, baseUrl, String(parsed.data.id), token);
+      res.setHeader("Content-Type", "application/vnd.apple.mpegurl");
+      res.setHeader("Cache-Control", "no-cache");
+      res.setHeader("Access-Control-Allow-Origin", "*");
+      res.send(rewritten);
+    } else {
+      const buffer = await upstream.arrayBuffer();
+      res.setHeader("Content-Type", contentType || "video/MP2T");
+      res.setHeader("Cache-Control", "no-cache");
+      res.setHeader("Access-Control-Allow-Origin", "*");
+      res.send(Buffer.from(buffer));
+    }
+  } catch {
+    res.status(502).send("Failed to fetch segment");
+  }
 });
 
 router.get("/channels/:id/stream", async (req: Request, res: Response) => {
