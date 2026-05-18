@@ -558,7 +558,7 @@ export default function VodPlayerPage() {
         </div>
       )}
 
-      {nextEpisodeId && (
+      {nextEpisodeId && showNextEp && (
         <div
           className={`absolute bottom-28 right-4 z-30 backdrop-blur rounded-xl px-4 py-3 flex items-center gap-3 shadow-2xl transition-all duration-200 ${
             nextEpFocused
