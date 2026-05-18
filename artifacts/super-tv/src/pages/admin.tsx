@@ -1280,6 +1280,7 @@ function ChannelsManager() {
   };
 
   const csvFileRef = useRef<HTMLInputElement>(null);
+  const m3uFileRef = useRef<HTMLInputElement>(null);
   const urlsFileRef = useRef<HTMLInputElement>(null);
 
   const handleCsvFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -1660,7 +1661,17 @@ function ChannelsManager() {
             {/* M3U Tab */}
             {importTab === 'm3u' && (
               <div className="space-y-3">
-                <p className="text-sm text-muted-foreground">Pega el contenido de tu lista M3U o M3U8:</p>
+                <div className="flex items-center justify-between gap-2">
+                  <p className="text-sm text-muted-foreground flex-1">Pega el contenido de tu lista M3U o M3U8, o sube el archivo directamente:</p>
+                  <Button size="sm" variant="ghost" className="text-xs shrink-0" onClick={() => m3uFileRef.current?.click()}>
+                    <FolderOpen className="w-3 h-3 mr-1" />Subir .m3u
+                  </Button>
+                  <input ref={m3uFileRef} type="file" accept=".m3u,.m3u8,.txt" className="hidden" onChange={async e => {
+                    const f = e.target.files?.[0]; if (!f) return;
+                    setImportContent(await f.text());
+                    e.target.value = '';
+                  }} />
+                </div>
                 <Textarea
                   rows={10}
                   placeholder={'#EXTM3U\n#EXTINF:-1 group-title="Noticias" tvg-logo="https://logo.com/cnn.png",CNN\nhttp://ejemplo.com/cnn.m3u8\n#EXTINF:-1 group-title="Deportes",ESPN\nhttp://ejemplo.com/espn.m3u8'}

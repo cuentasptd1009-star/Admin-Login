@@ -45,6 +45,7 @@ function isSafeRelayUrl(url: string): boolean {
 }
 
 function detectStreamFormat(url: string): string {
+  if (url.includes("youtube.com/") || url.includes("youtu.be/")) return "youtube";
   const clean = url.toLowerCase().split("?")[0].split("#")[0];
   if (clean.endsWith(".m3u8") || clean.includes("/hls/")) return "hls";
   if (clean.endsWith(".mpd") || clean.includes("/dash/")) return "dash";
@@ -162,12 +163,15 @@ router.get("/channels", async (req: Request, res: Response) => {
   }
 
   const channels = await query.orderBy(asc(channelsTable.order));
-  const result = channels.map((c) => ({
-    ...c,
-    createdAt: c.createdAt.toISOString(),
-    streamUrl: isAdmin ? c.streamUrl : null,
-    streamFormat: detectStreamFormat(c.streamUrl),
-  }));
+  const result = channels.map((c) => {
+    const streamFormat = detectStreamFormat(c.streamUrl);
+    return {
+      ...c,
+      createdAt: c.createdAt.toISOString(),
+      streamUrl: isAdmin || streamFormat === "youtube" ? c.streamUrl : null,
+      streamFormat,
+    };
+  });
 
   cache.set(cacheKey, result, TTL.MEDIUM);
   res.setHeader("Cache-Control", "private, max-age=30, stale-while-revalidate=60");

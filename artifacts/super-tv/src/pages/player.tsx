@@ -91,7 +91,8 @@ export default function PlayerPage() {
 
   const authToken = getToken('user') || getToken('admin') || '';
 
-  function buildChannelUrl(chId: string | number, fmt: string): string {
+  function buildChannelUrl(chId: string | number, fmt: string, directUrl?: string): string {
+    if (fmt === 'youtube' && directUrl) return directUrl;
     if (fmt === 'hls') {
       return `/api/channels/${chId}/hls-proxy?token=${encodeURIComponent(authToken)}`;
     }
@@ -101,7 +102,7 @@ export default function PlayerPage() {
   const storedFormat = searchParams.get('format') as VideoFormat | null;
   const initialFormat = miniState?.streamFormat || storedFormat || (rawUrl ? detectFormat(rawUrl) : 'native');
   const initialUrl = (type === 'channel' && channelId)
-    ? buildChannelUrl(channelId, initialFormat)
+    ? buildChannelUrl(channelId, initialFormat, miniState?.url || rawUrl || undefined)
     : rawUrl;
 
   const [currentUrl, setCurrentUrl] = useState(initialUrl || rawUrl);
@@ -547,7 +548,7 @@ export default function PlayerPage() {
     const ch = channels[newIdx];
     if (!ch) return;
     const fmt = detectFormat(ch.streamUrl || '');
-    const proxyUrl = buildChannelUrl(ch.id, fmt);
+    const proxyUrl = buildChannelUrl(ch.id, fmt, fmt === 'youtube' ? ch.streamUrl : undefined);
     updateMiniPlayerState({ channelIndex: newIdx, url: proxyUrl, title: ch.name, streamFormat: fmt });
     setCurrentFormat(fmt);
     setCurrentUrl(proxyUrl);

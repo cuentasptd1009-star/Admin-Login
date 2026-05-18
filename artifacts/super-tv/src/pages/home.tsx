@@ -73,6 +73,9 @@ function getChannelGridCols(): number {
 
 function buildMiniProxyUrl(ch: { id: number; streamUrl: string }): { url: string; streamFormat: string } {
   const token = getToken('user') || getToken('admin') || '';
+  if (ch.streamUrl.includes('youtube.com/') || ch.streamUrl.includes('youtu.be/')) {
+    return { url: ch.streamUrl, streamFormat: 'youtube' };
+  }
   const lower = ch.streamUrl.toLowerCase().split('?')[0];
   if (lower.endsWith('.m3u8') || lower.includes('/hls/')) {
     return { url: `/api/channels/${ch.id}/hls-proxy?token=${encodeURIComponent(token)}`, streamFormat: 'hls' };
