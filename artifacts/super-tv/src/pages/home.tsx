@@ -1647,13 +1647,15 @@ export default function Home() {
                           <span className="text-xs text-white/25">{row.items.length}</span>
                         </div>
                         <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 gap-3">
-                          {row.items.map((item) => {
+                          {row.items.map((item, cIdx) => {
                             const ext = item as unknown as { id: number; title: string; poster?: string };
+                            const isFocused = zone === 'rows' && rowIndex === rIdx && colIndex === cIdx;
                             return (
                               <ContentCard
                                 key={item.id}
                                 title={ext.title}
                                 image={ext.poster ?? null}
+                                isFocused={isFocused}
                                 onClick={() => playItem(item)}
                               />
                             );
