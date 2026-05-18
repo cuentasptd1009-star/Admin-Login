@@ -118,11 +118,8 @@ export function YouTubePlayerPage({ videoId, title, onBack, isFav, onFavToggle, 
             if (!destroyed) {
               const d = e.target.getDuration?.() ?? 0;
               if (d > 0) setDuration(d);
-              setHasStarted(true);
-              e.target.playVideo();
-              if (startFrom && startFrom > 10) {
-                e.target.seekTo(startFrom, true);
-              }
+              // Mobile browsers block autoplay without a direct user gesture.
+              // The user must tap the pre-play overlay (startPlayback) to begin.
             }
           },
           onStateChange: (e: any) => {
@@ -150,18 +147,6 @@ export function YouTubePlayerPage({ videoId, title, onBack, isFav, onFavToggle, 
         },
       });
     });
-
-    // Auto enter native fullscreen on mount (fall back to CSS which is already default)
-    const el = containerRef.current as any;
-    if (el?.requestFullscreen) {
-      el.requestFullscreen().then(() => {
-        setIsCssFullscreen(false);
-      }).catch(() => {
-        setIsCssFullscreen(true);
-      });
-    } else if (el?.webkitRequestFullscreen) {
-      try { el.webkitRequestFullscreen(); setIsCssFullscreen(false); } catch { setIsCssFullscreen(true); }
-    }
 
     flashControls();
 
@@ -241,10 +226,13 @@ export function YouTubePlayerPage({ videoId, title, onBack, isFav, onFavToggle, 
   }, [doToggleFullscreen]);
 
   const startPlayback = useCallback(() => {
-    ytPlayerRef.current?.playVideo();
+    const yt = ytPlayerRef.current;
+    if (!yt) return;
+    if (startFrom && startFrom > 10) { yt.seekTo(startFrom, true); }
+    yt.playVideo();
     setHasStarted(true);
     flashControls();
-  }, [flashControls]);
+  }, [flashControls, startFrom]);
 
   // Keyboard navigation - TV remote friendly
   useEffect(() => {
