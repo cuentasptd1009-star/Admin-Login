@@ -345,15 +345,13 @@ function ExternalPlayerModal({ player, onClose, onHistoryUpdate, onFavsUpdate }:
 
   if (player.type === 'youtube' && player.videoId) {
     return (
-      <div className="fixed inset-0 z-[100]">
-        <YouTubePlayerPage
-          videoId={player.videoId}
-          title={player.title}
-          onBack={onClose}
-          isFav={isFav}
-          onFavToggle={handleToggleFav}
-        />
-      </div>
+      <YouTubePlayerPage
+        videoId={player.videoId}
+        title={player.title}
+        onBack={onClose}
+        isFav={isFav}
+        onFavToggle={handleToggleFav}
+      />
     );
   }
 
