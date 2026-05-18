@@ -118,15 +118,29 @@ export function YouTubePlayerPage({ videoId, title, onBack, isFav, onFavToggle, 
             if (!destroyed) {
               const d = e.target.getDuration?.() ?? 0;
               if (d > 0) setDuration(d);
+              // Apply styles directly to the iframe YouTube creates so it fills the container
+              try {
+                const iframe = e.target.getIframe();
+                if (iframe) {
+                  iframe.style.position = 'absolute';
+                  iframe.style.inset = '0';
+                  iframe.style.width = '100%';
+                  iframe.style.height = '100%';
+                  iframe.style.border = 'none';
+                }
+              } catch {}
               // Mobile browsers block autoplay without a direct user gesture.
               // The user must tap the pre-play overlay (startPlayback) to begin.
             }
           },
           onStateChange: (e: any) => {
             if (destroyed) return;
+            // BUFFERING (3) or PLAYING (1) — show the player, remove pre-play overlay
+            if (e.data === 1 || e.data === 3) {
+              setHasStarted(true);
+            }
             if (e.data === 1) {
               setIsPlaying(true);
-              setHasStarted(true);
               setYtEnded(false);
               const d = ytPlayerRef.current?.getDuration?.() ?? 0;
               if (d > 0) setDuration(d);
