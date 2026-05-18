@@ -71,6 +71,7 @@ export default function VodPlayerPage() {
   const lastSaveRef = useRef(0);
   const retryCountRef = useRef(0);
   const controlsTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const showNextEpRef = useRef(false);
 
   const [currentUrl, setCurrentUrl] = useState(rawUrl);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -89,9 +90,14 @@ export default function VodPlayerPage() {
   const [errorBtnIndex, setErrorBtnIndex] = useState(0);
 
   useEffect(() => {
+    showNextEpRef.current = showNextEp;
+  }, [showNextEp]);
+
+  useEffect(() => {
     setShowNextEp(false);
     setNextEpFocused(false);
     setNextEpCountdown(0);
+    showNextEpRef.current = false;
   }, [episodeId, movieId]);
 
   const showControlsTemporarily = useCallback(() => {
@@ -158,10 +164,11 @@ export default function VodPlayerPage() {
             setShowNextEp(true);
             setNextEpFocused(true);
           }
-        } else if (showNextEp && timeLeft > 30) {
+        } else if (showNextEpRef.current && timeLeft > 30) {
           setShowNextEp(false);
           setNextEpFocused(false);
           setNextEpCountdown(0);
+          showNextEpRef.current = false;
         }
       }
       const now = Date.now();
