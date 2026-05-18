@@ -443,8 +443,6 @@ export function YouTubePlayerPage({ videoId, title, onBack, isFav, onFavToggle, 
         </div>
       </div>
 
-      {/* Cover strip at the very bottom to block "Watch on YouTube" link */}
-      <div className="absolute bottom-0 inset-x-0 h-14 z-[14] bg-black pointer-events-none" />
 
       {/* Center paused icon */}
       {hasStarted && !isPlaying && !ytEnded && (
