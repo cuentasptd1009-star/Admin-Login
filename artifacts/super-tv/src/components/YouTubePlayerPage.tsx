@@ -259,6 +259,17 @@ export function YouTubePlayerPage({ videoId, title, onBack, isFav, onFavToggle, 
     yt.playVideo();
     setHasStarted(true);
     flashControls();
+    // Auto-fullscreen on first play (requires user gesture — this click qualifies)
+    const el = containerRef.current as any;
+    if (el) {
+      if (el.requestFullscreen) {
+        el.requestFullscreen().catch(() => {});
+      } else if (el.webkitRequestFullscreen) {
+        try { el.webkitRequestFullscreen(); } catch {}
+      } else if (el.mozRequestFullScreen) {
+        try { el.mozRequestFullScreen(); } catch {}
+      }
+    }
   }, [flashControls, startFrom]);
 
   // Keyboard navigation - TV remote friendly
