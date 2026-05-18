@@ -76,8 +76,16 @@ async function checkHlsAuth(req: Request, res: Response): Promise<{ ok: boolean;
 
 const router = Router();
 
+const URL_PROTOCOLS = ["http://", "https://", "rtmp://", "rtmps://", "rtsp://", "udp://", "rtp://", "vlc://"];
+
+function looksLikeUrl(line: string): boolean {
+  return URL_PROTOCOLS.some((p) => line.startsWith(p));
+}
+
 function parseM3U(content: string) {
-  const lines = content.split("\n").map((l) => l.trim());
+  // Strip BOM if present
+  const cleaned = content.replace(/^\uFEFF/, "");
+  const lines = cleaned.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
   const channels: { name: string; logo?: string; category?: string; streamUrl: string }[] = [];
   let currentName = "";
   let currentLogo = "";
@@ -91,18 +99,15 @@ function parseM3U(content: string) {
       currentName = nameMatch ? nameMatch[1].trim() : "Canal";
       currentLogo = logoMatch ? logoMatch[1] : "";
       currentCategory = groupMatch ? groupMatch[1] : "";
-    } else if (
-      line.startsWith("http://") ||
-      line.startsWith("https://") ||
-      line.startsWith("rtmp://") ||
-      line.startsWith("rtsp://")
-    ) {
+    } else if (looksLikeUrl(line)) {
       if (!currentName) currentName = "Canal";
+      // Strip any trailing comment or whitespace from URL
+      const streamUrl = line.split(/\s+#/)[0].trim();
       channels.push({
         name: currentName,
         logo: currentLogo || undefined,
         category: currentCategory || undefined,
-        streamUrl: line,
+        streamUrl,
       });
       currentName = "";
       currentLogo = "";
