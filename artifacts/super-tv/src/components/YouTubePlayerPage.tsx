@@ -66,7 +66,7 @@ export function YouTubePlayerPage({ videoId, title, onBack, isFav, onFavToggle, 
   // Once video starts, keep bars a moment longer then fade them out
   useEffect(() => {
     if (!hasStarted) return;
-    const t = setTimeout(() => setCoverBars(false), 2000);
+    const t = setTimeout(() => setCoverBars(false), 5000);
     return () => clearTimeout(t);
   }, [hasStarted]);
 
