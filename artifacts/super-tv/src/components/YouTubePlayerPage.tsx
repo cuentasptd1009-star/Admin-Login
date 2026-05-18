@@ -197,6 +197,25 @@ export function YouTubePlayerPage({ videoId, title, onBack, isFav, onFavToggle, 
     };
   }, []);
 
+  // Request native fullscreen as soon as possible (component mounted from a user gesture)
+  useEffect(() => {
+    const tryFullscreen = () => {
+      const el = containerRef.current as any;
+      if (!el) return;
+      if (el.requestFullscreen) {
+        el.requestFullscreen().catch(() => {});
+      } else if (el.webkitRequestFullscreen) {
+        try { el.webkitRequestFullscreen(); } catch {}
+      } else if (el.mozRequestFullScreen) {
+        try { el.mozRequestFullScreen(); } catch {}
+      }
+    };
+    // Try immediately and after a short delay (some browsers need the DOM to settle)
+    tryFullscreen();
+    const t = setTimeout(tryFullscreen, 100);
+    return () => clearTimeout(t);
+  }, []);
+
   const togglePlay = useCallback(() => {
     const yt = ytPlayerRef.current;
     if (!yt) return;
