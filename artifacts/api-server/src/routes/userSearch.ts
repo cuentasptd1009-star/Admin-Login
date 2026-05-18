@@ -269,16 +269,18 @@ router.get("/user-search/youtube", requireUserAuth, async (req: Request, res: Re
     const contentType = req.query.type === "series" ? "series" : "movie";
     const smartQ = buildYouTubeQuery(q, contentType);
 
-    // Fetch more results than needed so we have enough after filtering
     const raw = await youtubeInternalSearch(smartQ, 50);
     if (raw.length === 0) return res.json({ items: [] });
 
-    // For movies: filter to only real full-length films (60+ min, no junk titles)
-    const filtered = contentType === "movie"
-      ? raw.filter(v => isLikelyFullMovie(v.title, v.duration))
+    // For movies: sort so full-length films appear first, but keep ALL results
+    const sorted = contentType === "movie"
+      ? [
+          ...raw.filter(v => isLikelyFullMovie(v.title, v.duration)),
+          ...raw.filter(v => !isLikelyFullMovie(v.title, v.duration)),
+        ]
       : raw;
 
-    const items = filtered.slice(0, 50).map((v) => ({
+    const items = sorted.map((v) => ({
       videoId: v.videoId,
       title: sanitizeText(v.title, 200),
       thumbnail: v.thumbnail,
