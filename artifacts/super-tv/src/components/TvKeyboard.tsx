@@ -18,9 +18,12 @@ export function TvKeyboard() {
   const [col, setCol] = useState(0);
 
   useEffect(() => {
+    let prevVisible = tvKeyboardStore.getState().visible;
     const unsub = tvKeyboardStore.subscribe(s => {
       setKbState(s);
-      if (s.visible) { setRow(1); setCol(0); }
+      // Only reset cursor position when the keyboard becomes newly visible
+      if (s.visible && !prevVisible) { setRow(1); setCol(0); }
+      prevVisible = s.visible;
     });
     return () => { unsub(); };
   }, []);
