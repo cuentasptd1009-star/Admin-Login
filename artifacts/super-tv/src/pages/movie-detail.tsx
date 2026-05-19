@@ -1,6 +1,7 @@
 import { useLocation, useRoute } from 'wouter';
 import { normalizeKey } from '@/lib/tv-remote';
 import { useListMovies, getListMoviesQueryKey, useGetMe, getGetMeQueryKey } from '@workspace/api-client-react';
+import { apiBase } from '@/lib/api';
 import { Play, ArrowLeft, Film, Tag, Search, X, Lock, Heart, Info } from 'lucide-react';
 import { getProgress, toggleFavorite, getFavorites, toggleExternalFavorite, isExternalFavorite, addExternalHistory, type ExternalItem } from '@/lib/user-data';
 import { clearTokens, getToken } from '@/lib/auth';
@@ -118,8 +119,8 @@ export default function MovieDetail() {
       const headers: Record<string, string> = token ? { Authorization: `Bearer ${token}` } : {};
       try {
         const [ytRes, archRes] = await Promise.allSettled([
-          fetch(`/api/user-search/youtube?q=${encodeURIComponent(q)}&type=movie`, { headers }).then(r => r.ok ? r.json() : { items: [] }),
-          fetch(`/api/user-search/archive?q=${encodeURIComponent(q)}`, { headers }).then(r => r.ok ? r.json() : { items: [] }),
+          fetch(`${apiBase}/api/user-search/youtube?q=${encodeURIComponent(q)}&type=movie`, { headers }).then(r => r.ok ? r.json() : { items: [] }),
+          fetch(`${apiBase}/api/user-search/archive?q=${encodeURIComponent(q)}`, { headers }).then(r => r.ok ? r.json() : { items: [] }),
         ]);
         setYtResults(ytRes.status === 'fulfilled' ? (ytRes.value.items ?? []) : []);
         setArchiveResults(archRes.status === 'fulfilled' ? (archRes.value.items ?? []) : []);
@@ -137,7 +138,7 @@ export default function MovieDetail() {
     setArchiveLoading(identifier);
     const token = getToken('user') || getToken('admin') || '';
     const headers: Record<string, string> = token ? { Authorization: `Bearer ${token}` } : {};
-    fetch(`/api/user-search/archive/video/${encodeURIComponent(identifier)}`, { headers })
+    fetch(`${apiBase}/api/user-search/archive/video/${encodeURIComponent(identifier)}`, { headers })
       .then(r => r.json())
       .then(data => { if (data.url) setExternalPlayer({ type: 'archive', url: data.url, title: data.title || title, thumbnail }); })
       .finally(() => setArchiveLoading(null));

@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { CheckCircle, Tv, AlertCircle, Loader2 } from 'lucide-react';
 import logo from '@assets/imagen_1777670460131.png';
+import { apiBase } from '@/lib/api';
 
 export default function Activar() {
   const params = new URLSearchParams(window.location.search);
@@ -13,7 +14,7 @@ export default function Activar() {
 
   useEffect(() => {
     if (!deviceId) return;
-    fetch('/api/device-auth/request', {
+    fetch(`${apiBase}/api/device-auth/request`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ deviceId }),
@@ -26,7 +27,7 @@ export default function Activar() {
     setStatus('loading');
     setErrorMsg('');
     try {
-      const res = await fetch('/api/device-auth/confirm', {
+      const res = await fetch(`${apiBase}/api/device-auth/confirm`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ deviceId, code: code.trim().toUpperCase() }),

@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useLocation } from 'wouter';
 import { useQueryClient } from '@tanstack/react-query';
+import { apiBase } from '@/lib/api';
 import {
   useGetMe, getGetMeQueryKey, useAdminLogin,
   useGetAdminStats, getGetAdminStatsQueryKey,
@@ -4376,7 +4377,7 @@ function SettingsManager() {
 
   useEffect(() => {
     const token = localStorage.getItem('admin_token') || localStorage.getItem('user_token') || '';
-    fetch('/api/admin/settings', { headers: { Authorization: `Bearer ${token}` } })
+    fetch(`${apiBase}/api/admin/settings`, { headers: { Authorization: `Bearer ${token}` } })
       .then(r => r.json())
       .then(d => {
         setTeraboxConfigured(!!d.teraboxCookies);
@@ -4389,7 +4390,7 @@ function SettingsManager() {
     const token = localStorage.getItem('admin_token') || localStorage.getItem('user_token') || '';
     setDropboxLoading(true);
     try {
-      const r = await fetch('/api/admin/settings', {
+      const r = await fetch(`${apiBase}/api/admin/settings`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify({ dropboxToken: dropboxToken.trim() || null }),
@@ -4412,7 +4413,7 @@ function SettingsManager() {
     const token = localStorage.getItem('admin_token') || localStorage.getItem('user_token') || '';
     setDropboxLoading(true);
     try {
-      await fetch('/api/admin/settings', {
+      await fetch(`${apiBase}/api/admin/settings`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify({ dropboxToken: null }),
@@ -4427,7 +4428,7 @@ function SettingsManager() {
     const token = localStorage.getItem('admin_token') || localStorage.getItem('user_token') || '';
     setDropboxLoading(true);
     try {
-      const r = await fetch('/api/dropbox/test', { headers: { Authorization: `Bearer ${token}` } });
+      const r = await fetch(`${apiBase}/api/dropbox/test`, { headers: { Authorization: `Bearer ${token}` } });
       const data = await r.json();
       setDropboxTestResult(data);
     } catch { setDropboxTestResult({ ok: false, error: 'Error de conexión' }); }
@@ -4438,7 +4439,7 @@ function SettingsManager() {
     const token = localStorage.getItem('admin_token') || localStorage.getItem('user_token') || '';
     setTeraboxLoading(true);
     try {
-      const r = await fetch('/api/admin/settings', {
+      const r = await fetch(`${apiBase}/api/admin/settings`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify({ teraboxCookies: teraboxCookies.trim() || null }),
@@ -4460,7 +4461,7 @@ function SettingsManager() {
     const token = localStorage.getItem('admin_token') || localStorage.getItem('user_token') || '';
     setTeraboxLoading(true);
     try {
-      await fetch('/api/admin/settings', {
+      await fetch(`${apiBase}/api/admin/settings`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify({ teraboxCookies: null }),
@@ -4726,7 +4727,7 @@ function SectionLayoutManager() {
 
   useEffect(() => {
     const token = getToken('admin') ?? getToken('subadmin') ?? '';
-    fetch('/api/admin/settings', { headers: { Authorization: `Bearer ${token}` } })
+    fetch(`${apiBase}/api/admin/settings`, { headers: { Authorization: `Bearer ${token}` } })
       .then(r => r.json())
       .then(d => {
         if (Array.isArray(d.sectionOrder) && d.sectionOrder.length > 0) setOrder(d.sectionOrder as SectionId[]);
@@ -4757,7 +4758,7 @@ function SectionLayoutManager() {
     const token = getToken('admin') ?? getToken('subadmin') ?? '';
     setSaving(true);
     try {
-      const r = await fetch('/api/admin/settings', {
+      const r = await fetch(`${apiBase}/api/admin/settings`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify({ sectionOrder: order, sectionVisibility: visibility }),

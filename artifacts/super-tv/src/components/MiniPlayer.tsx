@@ -3,8 +3,9 @@ import { useLocation } from 'wouter';
 import { X, Maximize2, ChevronLeft, ChevronRight, Tv2 } from 'lucide-react';
 import { getMiniPlayerState, setMiniPlayerState, subscribeMiniPlayer, updateMiniPlayerState } from '@/lib/mini-player-state';
 import { getToken } from '@/lib/auth';
+import { apiBase } from '@/lib/api';
 
-const BASE_URL = import.meta.env.BASE_URL?.replace(/\/$/, '') || '';
+const BASE_URL = apiBase;
 
 export function MiniPlayer() {
   const [, setLocation] = useLocation();

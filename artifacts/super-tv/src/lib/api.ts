@@ -1,5 +1,13 @@
 const BASE = (import.meta.env.VITE_API_URL || import.meta.env.BASE_URL || '').replace(/\/+$/, '');
 
+/**
+ * Base URL for all API calls.
+ * In development: empty string (relative to current host).
+ * In production with VITE_API_URL set: points to the backend host (e.g. Replit Deploy),
+ * so API traffic goes to the backend server and NOT through Vercel.
+ */
+export const apiBase = BASE;
+
 function getAuthHeader(): Record<string, string> {
   try {
     const path = window.location.pathname;

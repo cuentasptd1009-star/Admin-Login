@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useLocation } from 'wouter';
 import { useLoginWithCode } from '@workspace/api-client-react';
+import { apiBase } from '@/lib/api';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { setToken, getToken } from '@/lib/auth';
@@ -67,7 +68,7 @@ export default function Login() {
     setQrActivated(false);
     setShowQrModal(true);
     try {
-      await fetch('/api/device-auth/request', {
+      await fetch(`${apiBase}/api/device-auth/request`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ deviceId }),
@@ -84,7 +85,7 @@ export default function Login() {
     if (!showQrModal || qrActivated) return;
     pollRef.current = setInterval(async () => {
       try {
-        const res = await fetch(`/api/device-auth/status/${deviceId}`);
+        const res = await fetch(`${apiBase}/api/device-auth/status/${deviceId}`);
         const data = await res.json();
         if (data.status === 'confirmed' && data.token) {
           clearInterval(pollRef.current!); pollRef.current = null;

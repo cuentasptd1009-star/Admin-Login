@@ -7,6 +7,7 @@ import { useGetMe, getGetMeQueryKey } from '@workspace/api-client-react';
 import { getProgress, saveProgress, addToHistory, saveEpisodeProgress, getEpisodeProgress } from '@/lib/user-data';
 import { getMiniPlayerState, setMiniPlayerState, updateMiniPlayerState } from '@/lib/mini-player-state';
 import { getToken } from '@/lib/auth';
+import { apiBase } from '@/lib/api';
 import { normalizeKey } from '@/lib/tv-remote';
 
 type VideoFormat = 'hls' | 'dash' | 'flv' | 'native' | 'youtube';
@@ -91,9 +92,9 @@ export default function PlayerPage() {
   function buildChannelUrl(chId: string | number, fmt: string, directUrl?: string): string {
     if (fmt === 'youtube' && directUrl) return directUrl;
     if (fmt === 'hls') {
-      return `/api/channels/${chId}/hls-proxy?token=${encodeURIComponent(authToken)}`;
+      return `${apiBase}/api/channels/${chId}/hls-proxy?token=${encodeURIComponent(authToken)}`;
     }
-    return `/api/channels/${chId}/stream?token=${encodeURIComponent(authToken)}`;
+    return `${apiBase}/api/channels/${chId}/stream?token=${encodeURIComponent(authToken)}`;
   }
 
   const storedFormat = searchParams.get('format') as VideoFormat | null;
@@ -107,7 +108,7 @@ export default function PlayerPage() {
 
   useEffect(() => {
     if (!initialUrl && !rawUrl && channelId) {
-      fetch(`/api/channels/${channelId}`, {
+      fetch(`${apiBase}/api/channels/${channelId}`, {
         headers: authToken ? { Authorization: `Bearer ${authToken}` } : {},
       })
         .then(r => r.json())
@@ -223,7 +224,7 @@ export default function PlayerPage() {
         if (urlMatch) {
           retryCountRef.current = 1;
           const token = getToken('user') || getToken('admin') || '';
-          const hlsUrl = `/api/channels/${urlMatch[1]}/hls-proxy?token=${encodeURIComponent(token)}`;
+          const hlsUrl = `${apiBase}/api/channels/${urlMatch[1]}/hls-proxy?token=${encodeURIComponent(token)}`;
           setCurrentFormat('hls');
           setCurrentUrl(hlsUrl);
           return;
@@ -383,7 +384,7 @@ export default function PlayerPage() {
                   cleanupRef.current = null;
                   hls.destroy();
                   const t = getToken('user') || getToken('admin') || '';
-                  setCurrentUrl(`/api/channels/${channelId}/hls-proxy?token=${encodeURIComponent(t)}`);
+                  setCurrentUrl(`${apiBase}/api/channels/${channelId}/hls-proxy?token=${encodeURIComponent(t)}`);
                 } else if (data.type === Hls.ErrorTypes.NETWORK_ERROR) {
                   hls.startLoad();
                 } else if (data.type === Hls.ErrorTypes.MEDIA_ERROR) {
@@ -713,7 +714,7 @@ export default function PlayerPage() {
       try {
         const token = getToken('admin');
         if (!token) return;
-        await fetch(`/api/movies/${movieId}/hidden`, {
+        await fetch(`${apiBase}/api/movies/${movieId}/hidden`, {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
           body: JSON.stringify({ hidden: true }),

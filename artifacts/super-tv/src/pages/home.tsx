@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { normalizeKey } from '@/lib/tv-remote';
 import { useLocation } from 'wouter';
+import { apiBase } from '@/lib/api';
 import { YouTubePlayerPage } from '@/components/YouTubePlayerPage';
 import { ContentCard } from '@/components/ContentCard';
 import {
@@ -28,7 +29,7 @@ const DEFAULT_SECTION_CONFIG: SectionConfig = {
 function useSectionConfig(): SectionConfig {
   const [config, setConfig] = useState<SectionConfig>(DEFAULT_SECTION_CONFIG);
   useEffect(() => {
-    fetch('/api/settings/public')
+    fetch(`${apiBase}/api/settings/public`)
       .then(r => r.json())
       .then(d => {
         const order: SectionKey[] = Array.isArray(d.sectionOrder) ? d.sectionOrder : DEFAULT_SECTION_CONFIG.order;
@@ -90,11 +91,11 @@ function buildMiniProxyUrl(ch: { id: number; streamUrl: string }): { url: string
   }
   const lower = ch.streamUrl.toLowerCase().split('?')[0];
   if (lower.endsWith('.m3u8') || lower.includes('/hls/')) {
-    return { url: `/api/channels/${ch.id}/hls-proxy?token=${encodeURIComponent(token)}`, streamFormat: 'hls' };
+    return { url: `${apiBase}/api/channels/${ch.id}/hls-proxy?token=${encodeURIComponent(token)}`, streamFormat: 'hls' };
   }
   const isDash = lower.endsWith('.mpd') || lower.includes('/dash/');
   const isFlv = lower.endsWith('.flv');
-  return { url: `/api/channels/${ch.id}/stream?token=${encodeURIComponent(token)}`, streamFormat: isDash ? 'dash' : isFlv ? 'flv' : 'native' };
+  return { url: `${apiBase}/api/channels/${ch.id}/stream?token=${encodeURIComponent(token)}`, streamFormat: isDash ? 'dash' : isFlv ? 'flv' : 'native' };
 }
 
 interface ContentRowData {
@@ -768,8 +769,8 @@ export default function Home() {
       try {
         const typeParam = '&type=movie';
         const [ytRes, archRes] = await Promise.allSettled([
-          fetch(`/api/user-search/youtube?q=${encodeURIComponent(q)}${typeParam}`, { headers }).then(r => r.ok ? r.json() : { items: [] }),
-          fetch(`/api/user-search/archive?q=${encodeURIComponent(q)}`, { headers }).then(r => r.ok ? r.json() : { items: [] }),
+          fetch(`${apiBase}/api/user-search/youtube?q=${encodeURIComponent(q)}${typeParam}`, { headers }).then(r => r.ok ? r.json() : { items: [] }),
+          fetch(`${apiBase}/api/user-search/archive?q=${encodeURIComponent(q)}`, { headers }).then(r => r.ok ? r.json() : { items: [] }),
         ]);
         setYtResults(ytRes.status === 'fulfilled' ? (ytRes.value.items ?? []) : []);
         setArchiveResults(archRes.status === 'fulfilled' ? (archRes.value.items ?? []) : []);
@@ -795,7 +796,7 @@ export default function Home() {
       setArchiveLoading(identifier);
       const token = getToken('user') || getToken('admin') || '';
       const headers: Record<string, string> = token ? { Authorization: `Bearer ${token}` } : {};
-      fetch(`/api/user-search/archive/video/${encodeURIComponent(identifier)}`, { headers })
+      fetch(`${apiBase}/api/user-search/archive/video/${encodeURIComponent(identifier)}`, { headers })
         .then(r => r.json())
         .then(data => { if (data.url) setExternalPlayer({ type: 'archive', url: data.url, title: data.title || (item as any).title || '', thumbnail: (item as any)._archThumbnail }); })
         .finally(() => setArchiveLoading(null));
