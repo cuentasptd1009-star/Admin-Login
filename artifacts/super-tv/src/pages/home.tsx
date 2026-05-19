@@ -45,7 +45,7 @@ import { setMiniPlayerState, updateMiniPlayerState, getMiniPlayerState, subscrib
 import { useTvKeyboard } from '@/hooks/use-tv-keyboard';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Play, Pause, LogOut, Search, Tv, Film, Tv2, X, Download, Share2, UserCircle2, AlertTriangle, Lock, Mic, MicOff, Home as HomeIcon, Smartphone, Menu, Heart, Clock, Trash2, Youtube, Maximize2, Minimize2 } from 'lucide-react';
-import { getFavorites, getAllProgress, getHistory, toggleFavorite, getAllSeriesProgress, getExternalFavorites, getExternalHistory, toggleExternalFavorite, addExternalHistory, isExternalFavorite, removeExternalHistory, clearExternalHistory, type ExternalItem, getSearchHistory, addSearchHistory, removeSearchHistory, clearSearchHistory, getSeriesFavorites, toggleSeriesFavorite } from '@/lib/user-data';
+import { getFavorites, getAllProgress, getHistory, toggleFavorite, getAllSeriesProgress, getExternalFavorites, getExternalHistory, toggleExternalFavorite, addExternalHistory, isExternalFavorite, removeExternalHistory, clearExternalHistory, type ExternalItem, getSearchHistory, addSearchHistory, removeSearchHistory, clearSearchHistory, getSeriesFavorites, toggleSeriesFavorite, getExternalProgress } from '@/lib/user-data';
 import { useVoiceSearch } from '@/hooks/use-voice-search';
 import logo from '@assets/imagen_1777670460131.png';
 import channelDefaultLogo from '@assets/image_1778868245666.png';
@@ -356,6 +356,7 @@ function ExternalPlayerModal({ player, onClose, onHistoryUpdate, onFavsUpdate }:
   const ctrlBtn = 'p-3 rounded-2xl bg-black/55 backdrop-blur-md border border-white/10 text-white/90 hover:bg-black/75 hover:text-white active:scale-95 transition-all duration-150 shadow-lg';
 
   if (player.type === 'youtube' && player.videoId) {
+    const savedTime = getExternalProgress(extId)?.time ?? 0;
     return (
       <YouTubePlayerPage
         videoId={player.videoId}
@@ -363,6 +364,8 @@ function ExternalPlayerModal({ player, onClose, onHistoryUpdate, onFavsUpdate }:
         onBack={onClose}
         isFav={isFav}
         onFavToggle={handleToggleFav}
+        externalId={extId}
+        startFrom={savedTime > 10 ? savedTime : 0}
       />
     );
   }
@@ -528,7 +531,9 @@ export default function Home() {
       if (s) items.push({ id: s.id, title: s.title, poster: s.poster, type: 'series', time: p.time, duration: p.duration, episodeInfo: `T${p.seasonNumber}:E${p.episodeNumber}`, updatedAt: p.updatedAt });
     }
     for (const ext of externalHistory) {
-      items.push({ id: 0, title: ext.title, poster: ext.thumbnail, type: 'external', time: 0, duration: 0, updatedAt: ext.updatedAt, externalItem: { id: ext.id, source: ext.source, videoId: ext.videoId, url: ext.url, thumbnail: ext.thumbnail } });
+      const extProgId = ext.source === 'youtube' ? `yt_${ext.videoId}` : `arch_${ext.url}`;
+      const extProg = getExternalProgress(extProgId);
+      items.push({ id: 0, title: ext.title, poster: ext.thumbnail, type: 'external', time: extProg?.time ?? 0, duration: extProg?.duration ?? 0, updatedAt: ext.updatedAt, externalItem: { id: ext.id, source: ext.source, videoId: ext.videoId, url: ext.url, thumbnail: ext.thumbnail } });
     }
     items.sort((a, b) => b.updatedAt - a.updatedAt);
     return items.slice(0, 14);

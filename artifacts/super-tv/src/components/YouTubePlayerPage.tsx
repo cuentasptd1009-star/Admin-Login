@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { Play, Pause, ArrowLeft, Maximize2, Minimize2, SkipBack, SkipForward, Heart, ChevronRight } from 'lucide-react';
 import { loadYouTubeApi } from '@/lib/youtube-api';
-import { saveProgress, saveEpisodeProgress } from '@/lib/user-data';
+import { saveProgress, saveEpisodeProgress, saveExternalProgress, clearExternalProgress } from '@/lib/user-data';
 import logo from '@assets/imagen_1777670460131.png';
 
 interface Props {
@@ -18,6 +18,8 @@ interface Props {
   seasonId?: number;
   seasonNumber?: number;
   episodeNumber?: number;
+  // External video id (for standalone YouTube results, not tied to a movie/episode)
+  externalId?: string;
   // Next episode
   nextEpisodeId?: number;
   nextEpisodeTitle?: string;
@@ -36,7 +38,7 @@ function formatTime(s: number): string {
   return `${m}:${String(sec).padStart(2, '0')}`;
 }
 
-export function YouTubePlayerPage({ videoId, title, onBack, isFav, onFavToggle, movieId, startFrom, episodeId, seriesId, seasonId, seasonNumber, episodeNumber, nextEpisodeId, nextEpisodeTitle, nextEpisodeNumber, nextSeasonNumber, seriesTitle, onNextEpisode }: Props) {
+export function YouTubePlayerPage({ videoId, title, onBack, isFav, onFavToggle, movieId, startFrom, externalId, episodeId, seriesId, seasonId, seasonNumber, episodeNumber, nextEpisodeId, nextEpisodeTitle, nextEpisodeNumber, nextSeasonNumber, seriesTitle, onNextEpisode }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const playerDivRef = useRef<HTMLDivElement>(null);
   const ytPlayerRef = useRef<any>(null);
@@ -106,6 +108,8 @@ export function YouTubePlayerPage({ videoId, title, onBack, isFav, onFavToggle, 
             saveEpisodeProgress(seriesId, seasonId, seasonNumber ?? 1, episodeId, episodeNumber ?? 1, t, d, title);
           } else if (movieId) {
             saveProgress(movieId, t, d);
+          } else if (externalId) {
+            saveExternalProgress(externalId, t, d);
           }
         }
       }, 500);
@@ -113,7 +117,7 @@ export function YouTubePlayerPage({ videoId, title, onBack, isFav, onFavToggle, 
       if (pollRef.current) clearInterval(pollRef.current);
     }
     return () => { if (pollRef.current) clearInterval(pollRef.current); };
-  }, [isPlaying, movieId, episodeId, seriesId, seasonId, seasonNumber, episodeNumber, title]);
+  }, [isPlaying, movieId, episodeId, seriesId, seasonId, seasonNumber, episodeNumber, externalId, title]);
 
   useEffect(() => {
     let destroyed = false;
@@ -189,6 +193,8 @@ export function YouTubePlayerPage({ videoId, title, onBack, isFav, onFavToggle, 
                 try { localStorage.removeItem(`supertv_eprog_${episodeId}`); } catch {}
               } else if (movieId) {
                 try { localStorage.removeItem(`supertv_prog_${movieId}`); } catch {}
+              } else if (externalId) {
+                clearExternalProgress(externalId);
               }
             }
           },

@@ -240,6 +240,38 @@ export function clearExternalHistory(): void {
   } catch {}
 }
 
+// ── External content position progress ────────────────────────────────────────
+
+export interface ExternalProgress {
+  id: string;
+  time: number;
+  duration: number;
+  updatedAt: number;
+}
+
+export function saveExternalProgress(id: string, time: number, duration: number): void {
+  try {
+    if (time < 10) return;
+    if (duration > 0 && time / duration > 0.95) {
+      localStorage.removeItem(`${P}extprog_${id}`);
+      return;
+    }
+    const data: ExternalProgress = { id, time, duration, updatedAt: Date.now() };
+    localStorage.setItem(`${P}extprog_${id}`, JSON.stringify(data));
+  } catch {}
+}
+
+export function getExternalProgress(id: string): ExternalProgress | null {
+  try {
+    const raw = localStorage.getItem(`${P}extprog_${id}`);
+    return raw ? (JSON.parse(raw) as ExternalProgress) : null;
+  } catch { return null; }
+}
+
+export function clearExternalProgress(id: string): void {
+  try { localStorage.removeItem(`${P}extprog_${id}`); } catch {}
+}
+
 // ── Search history ────────────────────────────────────────────────────────────
 
 export function getSearchHistory(): string[] {
