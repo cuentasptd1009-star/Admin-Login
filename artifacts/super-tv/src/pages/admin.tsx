@@ -6,7 +6,7 @@ import {
   useGetAdminStats, getGetAdminStatsQueryKey,
   useGetWhatsappAlerts, getGetWhatsappAlertsQueryKey, useDismissWhatsappAlerts,
   useListCodes, getListCodesQueryKey, useCreateCode, useDeleteCode, useAdjustCodeTime, useUpdateCode,
-  useListChannels, getListChannelsQueryKey, useCreateChannel, useUpdateChannel, useDeleteChannel, useImportChannels,
+  useListChannels, useCreateChannel, useUpdateChannel, useDeleteChannel, useImportChannels,
   useListMovies, getListMoviesQueryKey, useCreateMovie, useUpdateMovie, useDeleteMovie,
   useListSubadmins, getListSubadminsQueryKey, useCreateSubadmin, useUpdateSubadmin, useDeleteSubadmin, useAddSubadminBalance,
   useListPackages, getListPackagesQueryKey, useCreatePackage, useUpdatePackage, useDeletePackage,
@@ -1064,10 +1064,12 @@ function downloadCsvTemplate() {
 
 type ImportTab = 'm3u' | 'csv' | 'urls';
 
+const ADMIN_CHANNELS_KEY = ['admin', 'channels'] as const;
+
 function ChannelsManager() {
   const qc = useQueryClient();
   const { toast } = useToast();
-  const { data: channels, isLoading } = useListChannels(undefined, { query: { queryKey: getListChannelsQueryKey() } });
+  const { data: channels, isLoading } = useListChannels(undefined, { query: { queryKey: ADMIN_CHANNELS_KEY, staleTime: 0 } });
   const { data: existingCategories = [] } = useListChannelCategories();
   const createMutation = useCreateChannel();
   const updateMutation = useUpdateChannel();
@@ -1161,7 +1163,7 @@ function ChannelsManager() {
       headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ category }),
     });
-    qc.invalidateQueries({ queryKey: getListChannelsQueryKey() });
+    qc.invalidateQueries({ queryKey: ADMIN_CHANNELS_KEY });
   };
 
   const handleDragEnd = async (event: DragEndEvent) => {
@@ -1179,7 +1181,7 @@ function ChannelsManager() {
         headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
         body: JSON.stringify({ ids: newOrder }),
       });
-      qc.invalidateQueries({ queryKey: getListChannelsQueryKey() });
+      qc.invalidateQueries({ queryKey: ADMIN_CHANNELS_KEY });
     } catch {
       toast({ variant: 'destructive', title: 'Error al guardar orden' });
     } finally {
@@ -1191,7 +1193,7 @@ function ChannelsManager() {
     if (!newCh.name || !newCh.streamUrl) { toast({ variant: 'destructive', title: 'Nombre y URL son requeridos' }); return; }
     createMutation.mutate({ data: { name: newCh.name, streamUrl: newCh.streamUrl, category: newCh.category || undefined, logo: newCh.logo || undefined } }, {
       onSuccess: () => {
-        qc.invalidateQueries({ queryKey: getListChannelsQueryKey() });
+        qc.invalidateQueries({ queryKey: ADMIN_CHANNELS_KEY });
         toast({ title: 'Canal creado' });
         setNewCh({ name: '', streamUrl: '', category: '', logo: '' }); setShowForm(false);
       },
@@ -1203,7 +1205,7 @@ function ChannelsManager() {
     if (!editCh || !editCh.name || !editCh.streamUrl) { toast({ variant: 'destructive', title: 'Nombre y URL son requeridos' }); return; }
     updateMutation.mutate({ id: editCh.id, data: { name: editCh.name, streamUrl: editCh.streamUrl, category: editCh.category || undefined, logo: editCh.logo || undefined } }, {
       onSuccess: () => {
-        qc.invalidateQueries({ queryKey: getListChannelsQueryKey() });
+        qc.invalidateQueries({ queryKey: ADMIN_CHANNELS_KEY });
         toast({ title: 'Canal actualizado' });
         setEditCh(null);
       },
@@ -1214,7 +1216,7 @@ function ChannelsManager() {
   const handleDelete = (id: number) => {
     if (!confirm('¿Eliminar este canal?')) return;
     deleteMutation.mutate({ id }, {
-      onSuccess: () => { qc.invalidateQueries({ queryKey: getListChannelsQueryKey() }); toast({ title: 'Canal eliminado' }); }
+      onSuccess: () => { qc.invalidateQueries({ queryKey: ADMIN_CHANNELS_KEY }); toast({ title: 'Canal eliminado' }); }
     });
   };
 
@@ -1245,7 +1247,7 @@ function ChannelsManager() {
         headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
         body: JSON.stringify({ ids: Array.from(selectedIds) }),
       });
-      qc.invalidateQueries({ queryKey: getListChannelsQueryKey() });
+      qc.invalidateQueries({ queryKey: ADMIN_CHANNELS_KEY });
       toast({ title: `🗑️ ${selectedIds.size} canal${selectedIds.size !== 1 ? 'es eliminados' : ' eliminado'}` });
       setSelectedIds(new Set());
       setSelectionMode(false);
@@ -1266,7 +1268,7 @@ function ChannelsManager() {
         headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
         body: JSON.stringify({ ids: Array.from(selectedIds), category: bulkCategoryValue.trim() || null }),
       });
-      qc.invalidateQueries({ queryKey: getListChannelsQueryKey() });
+      qc.invalidateQueries({ queryKey: ADMIN_CHANNELS_KEY });
       toast({ title: `✅ Categoría asignada a ${selectedIds.size} canal${selectedIds.size !== 1 ? 'es' : ''}` });
       setBulkCategoryOpen(false);
       setBulkCategoryValue('');
@@ -1310,7 +1312,7 @@ function ChannelsManager() {
       const m3u = csvToM3U(valid);
       importMutation.mutate({ data: { content: m3u, format: 'm3u' } }, {
         onSuccess: (data) => {
-          qc.invalidateQueries({ queryKey: getListChannelsQueryKey() });
+          qc.invalidateQueries({ queryKey: ADMIN_CHANNELS_KEY });
           toast({ title: `✅ Importados ${data.imported} canales`, description: data.failed > 0 ? `${data.failed} fallaron` : 'Todos los canales fueron importados correctamente' });
           setCsvRows([]); setCsvFileName(''); setImportContent(''); setShowImportDialog(false);
         },
@@ -1331,7 +1333,7 @@ function ChannelsManager() {
       }
       importMutation.mutate({ data: { content, format } }, {
         onSuccess: (data) => {
-          qc.invalidateQueries({ queryKey: getListChannelsQueryKey() });
+          qc.invalidateQueries({ queryKey: ADMIN_CHANNELS_KEY });
           toast({ title: `✅ Importados ${data.imported} canales`, description: data.failed > 0 ? `${data.failed} fallaron` : undefined });
           setImportContent(''); setShowImportDialog(false);
         },
@@ -1372,7 +1374,7 @@ function ChannelsManager() {
         });
       } catch { failed++; }
     }
-    qc.invalidateQueries({ queryKey: getListChannelsQueryKey() });
+    qc.invalidateQueries({ queryKey: ADMIN_CHANNELS_KEY });
     toast({ title: `Importados ${imported} canales`, description: failed > 0 ? `${failed} no se pudieron importar` : undefined });
     e.target.value = '';
   };
