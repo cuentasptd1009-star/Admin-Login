@@ -4864,6 +4864,7 @@ function SeriesManager() {
   const [ytManualTitle, setYtManualTitle] = useState('');
   const [ytManualCategory, setYtManualCategory] = useState('');
   const [ytManualLinks, setYtManualLinks] = useState<Array<{ url: string; title: string }>>([{ url: '', title: '' }]);
+  const [ytManualPoster, setYtManualPoster] = useState('');
   const [ytManualCreating, setYtManualCreating] = useState(false);
   const [showYtBulk, setShowYtBulk] = useState<{ seriesId: number; seasonId: number; seasonEpCount: number } | null>(null);
   const [ytBulkText, setYtBulkText] = useState('');
@@ -5101,7 +5102,7 @@ function SeriesManager() {
       const sr = await fetch(`${BASE_API}/api/series`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${getAdminToken()}` },
-        body: JSON.stringify({ title: ytManualTitle.trim(), category: ytManualCategory.trim() || undefined }),
+        body: JSON.stringify({ title: ytManualTitle.trim(), category: ytManualCategory.trim() || undefined, poster: ytManualPoster.trim() || undefined }),
       });
       if (!sr.ok) { toast({ variant: 'destructive', title: 'Error al crear la serie' }); setYtManualCreating(false); return; }
       const series = await sr.json();
@@ -5134,7 +5135,7 @@ function SeriesManager() {
         toast({ title: `Serie "${ytManualTitle.trim()}" creada con ${validLinks.length} episodio(s)` });
       }
       setShowYtManual(false);
-      setYtManualTitle(''); setYtManualCategory('');
+      setYtManualTitle(''); setYtManualCategory(''); setYtManualPoster('');
       setYtManualLinks([{ url: '', title: '' }]);
       refresh();
     } catch (e: unknown) {
@@ -5350,7 +5351,15 @@ function SeriesManager() {
                   <span className="text-xs text-muted-foreground w-6 text-right flex-shrink-0 font-medium">{i + 1}.</span>
                   <Input
                     value={link.url}
-                    onChange={e => setYtManualLinks(ls => ls.map((l, j) => j === i ? { ...l, url: e.target.value } : l))}
+                    onChange={e => {
+                      const val = e.target.value;
+                      setYtManualLinks(ls => ls.map((l, j) => j === i ? { ...l, url: val } : l));
+                      const firstWithUrl = ytManualLinks.findIndex((l, j) => j !== i ? l.url.trim() : val.trim());
+                      if (i === 0 || firstWithUrl === -1 || firstWithUrl === i) {
+                        const vid = extractYtVideoId(val);
+                        if (vid && !ytManualPoster) setYtManualPoster(`https://i.ytimg.com/vi/${vid}/maxresdefault.jpg`);
+                      }
+                    }}
                     placeholder="https://www.youtube.com/watch?v=..."
                     className="bg-background text-xs h-8 flex-1 min-w-0"
                   />
@@ -5369,8 +5378,39 @@ function SeriesManager() {
               ))}
             </div>
           </div>
+          <div className="space-y-2">
+            <label className="text-xs text-muted-foreground">Carátula (poster)</label>
+            <div className="flex gap-2 items-start">
+              {ytManualPoster && (
+                <img
+                  src={ytManualPoster}
+                  alt="poster"
+                  className="h-24 w-auto rounded-lg object-cover border border-border flex-shrink-0"
+                  onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }}
+                />
+              )}
+              <div className="flex-1 space-y-1">
+                <Input
+                  value={ytManualPoster}
+                  onChange={e => {
+                    const val = e.target.value;
+                    const vid = extractYtVideoId(val);
+                    setYtManualPoster(vid ? `https://i.ytimg.com/vi/${vid}/maxresdefault.jpg` : val);
+                  }}
+                  placeholder="Se genera automáticamente del primer capítulo, o pega una URL"
+                  className="bg-background text-xs"
+                />
+                {ytManualPoster && (
+                  <Button size="sm" variant="ghost" className="h-6 text-xs text-muted-foreground px-1" onClick={() => setYtManualPoster('')}>
+                    Quitar carátula
+                  </Button>
+                )}
+              </div>
+            </div>
+          </div>
+
           <div className="flex gap-2 justify-end">
-            <Button variant="outline" onClick={() => { setShowYtManual(false); setYtManualTitle(''); setYtManualCategory(''); setYtManualLinks([{ url: '', title: '' }]); }}>Cancelar</Button>
+            <Button variant="outline" onClick={() => { setShowYtManual(false); setYtManualTitle(''); setYtManualCategory(''); setYtManualPoster(''); setYtManualLinks([{ url: '', title: '' }]); }}>Cancelar</Button>
             <Button onClick={handleYtManualCreate} disabled={ytManualCreating || !ytManualTitle.trim() || ytManualLinks.filter(l => l.url.trim()).length === 0}>
               {ytManualCreating ? <Loader2 className="w-4 h-4 animate-spin mr-1" /> : null}
               Crear Serie ({ytManualLinks.filter(l => l.url.trim()).length} cap.)
