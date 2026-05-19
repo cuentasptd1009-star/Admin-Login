@@ -421,6 +421,7 @@ export default function Home() {
 
   const [activeTab, setActiveTab] = useState<TabKey>(initialTab);
   const [searchQuery, setSearchQuery] = useState('');
+  const [searchInput, setSearchInput] = useState('');
   const [zone, setZone] = useState<NavZone>('rows');
 
   type YtResult = { videoId: string; title: string; thumbnail: string; channel: string; year?: string; duration: string };
@@ -472,7 +473,7 @@ export default function Home() {
   const tabs = navItems;
 
   const { isListening, isSupported: voiceSupported, startListening, stopListening } = useVoiceSearch({
-    onResult: (transcript) => { setSearchQuery(transcript); setRowIndex(0); setColIndex(0); setVoiceError(null); searchRef.current?.focus(); },
+    onResult: (transcript) => { setSearchQuery(transcript); setSearchInput(transcript); setRowIndex(0); setColIndex(0); setVoiceError(null); searchRef.current?.focus(); },
     onError: (err) => { setVoiceError(err === 'not-allowed' ? 'Permiso de micrófono denegado' : 'No se pudo reconocer la voz'); setTimeout(() => setVoiceError(null), 3000); },
   });
 
@@ -943,7 +944,7 @@ export default function Home() {
               if (searchQuery.trim()) {
                 setSidebarMouseOpen(false); setZone('rows'); setRowIndex(0); setColIndex(0);
               } else {
-                openKeyboard(searchRef.current, { value: searchQuery, onChange: (v) => { setSearchQuery(v); setRowIndex(0); setColIndex(0); }, label: 'Buscar...' });
+                openKeyboard(searchRef.current, { value: searchInput, onChange: (v) => { setSearchQuery(v); setSearchInput(v); setRowIndex(0); setColIndex(0); }, label: 'Buscar...' });
               }
             } else if (si.kind === 'mic') {
               isListening ? stopListening() : startListening();
@@ -1262,15 +1263,15 @@ export default function Home() {
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-white/30 pointer-events-none" />
             <input
               ref={searchRef}
-              value={searchQuery}
-              onChange={e => { setSearchQuery(e.target.value); setRowIndex(0); setColIndex(0); }}
+              value={searchInput}
+              onChange={e => { setSearchQuery(e.target.value); setSearchInput(e.target.value); setRowIndex(0); setColIndex(0); }}
               onFocus={() => { setZone('sidebar'); const idx = sidebarItems.findIndex(it => it.kind === 'search'); if (idx >= 0) setSidebarIdx(idx); }}
-              onKeyDown={e => { if (e.key === 'Enter' && searchQuery.trim()) { e.preventDefault(); e.stopPropagation(); setSidebarMouseOpen(false); setZone('rows'); setRowIndex(0); setColIndex(0); (e.target as HTMLInputElement).blur(); } }}
+              onKeyDown={e => { if (e.key === 'Enter' && searchQuery.trim()) { e.preventDefault(); e.stopPropagation(); setSearchInput(''); setSidebarMouseOpen(false); setZone('rows'); setRowIndex(0); setColIndex(0); (e.target as HTMLInputElement).blur(); } }}
               placeholder={isListening ? 'Escuchando...' : 'Buscar...'}
               className={`w-full bg-white/7 border border-white/10 rounded-xl pl-9 ${voiceSupported ? 'pr-9' : 'pr-4'} py-2.5 text-sm text-white placeholder:text-white/30 focus:outline-none focus:border-white/20 transition-colors ${zone === 'sidebar' && sidebarItems[sidebarIdx]?.kind === 'search' ? 'border-white/25 bg-white/10' : ''} ${isListening ? 'border-red-500/50' : ''}`}
             />
-            {searchQuery
-              ? <button onClick={() => setSearchQuery('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-white/30 hover:text-white"><X className="w-3.5 h-3.5" /></button>
+            {(searchQuery || searchInput)
+              ? <button onClick={() => { setSearchQuery(''); setSearchInput(''); }} className="absolute right-3 top-1/2 -translate-y-1/2 text-white/30 hover:text-white"><X className="w-3.5 h-3.5" /></button>
               : voiceSupported && (
                 <button onClick={() => isListening ? stopListening() : startListening()}
                   className={`absolute right-2.5 top-1/2 -translate-y-1/2 p-0.5 rounded-lg transition-colors
@@ -1339,8 +1340,8 @@ export default function Home() {
           <div className="flex-1 relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-white/30 pointer-events-none" />
             <input
-              value={searchQuery}
-              onChange={e => { setSearchQuery(e.target.value); setRowIndex(0); setColIndex(0); }}
+              value={searchInput}
+              onChange={e => { setSearchQuery(e.target.value); setSearchInput(e.target.value); setRowIndex(0); setColIndex(0); }}
               placeholder="Buscar..."
               className="w-full bg-white/7 border border-white/10 rounded-lg pl-8 pr-3 py-1.5 text-xs text-white placeholder:text-white/30 focus:outline-none focus:border-white/20"
             />
