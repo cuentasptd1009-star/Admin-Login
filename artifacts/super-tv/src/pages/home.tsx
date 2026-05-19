@@ -627,17 +627,24 @@ export default function Home() {
     }
     if (q && activeTab !== 'series') {
       const rows: ContentRowData[] = [];
+      // 1. Local imported movies (highest priority)
       const results = movies.filter(m => m.title.toLowerCase().includes(q));
       if (results.length > 0) rows.push({ id: 'search', title: `Resultados: "${searchQuery}"`, emoji: '🔍', items: results as ContentItem[] });
-      // Archive first — real movies (higher priority)
+      // 2 & 3. YouTube — split into full movies vs other videos
+      if (ytResults.length > 0) {
+        const JUNK_RE = /\b(tr[aá]iler|trailer|reseña|resumen|cr[ií]tica|review|top\s*\d+|ranking|explicado|escenas|escena|capitulo|cap[ií]tulo|episodio|temporada|clip|making\s*of|behind|entrevista|interview|analisis|an[aá]lisis|banda\s*sonora|soundtrack|ost\b|music\s*video|lyric|en\s*\d+\s*minutos?|anuncio|avance|promo\b|react\w*|vlog|shorts?\b|teaser|featurette|blooper|fan\s*made|fanmade|parody|parodia|gameplay|speedrun)\b/i;
+        const parseMins = (t: string) => { if (!t) return -1; const p = t.split(':').map(Number); if (p.some(isNaN)) return -1; return p.length === 3 ? p[0]*60+p[1]+p[2]/60 : p.length === 2 ? p[0]+p[1]/60 : -1; };
+        const isFullMovie = (r: typeof ytResults[0]) => !JUNK_RE.test(r.title) && (parseMins(r.duration ?? '') === -1 || parseMins(r.duration ?? '') >= 60);
+        const ytMovies = ytResults.filter(isFullMovie);
+        const ytOthers = ytResults.filter(r => !isFullMovie(r));
+        const toItem = (r: typeof ytResults[0], i: number) => ({ id: -(i + 1) * 100, title: r.title, poster: r.thumbnail, createdAt: '', _ytVideoId: r.videoId, _ytThumbnail: r.thumbnail, _ytDuration: r.duration }) as unknown as ContentItem;
+        if (ytMovies.length > 0) rows.push({ id: 'ext-yt-movies', title: 'Películas en YouTube', emoji: '🎬', items: ytMovies.map(toItem) });
+        if (ytOthers.length > 0) rows.push({ id: 'ext-yt-others', title: 'Otros videos', emoji: '📹', items: ytOthers.map(toItem) });
+      }
+      // 4. Archive.org — last (classic/free movies)
       if (archiveResults.length > 0) {
         const archItems = archiveResults.map((r, i) => ({ id: -(i + 1) * 100 - 50, title: r.title, poster: r.thumbnail, createdAt: '', _archIdentifier: r.identifier, _archThumbnail: r.thumbnail })) as unknown as ContentItem[];
-        rows.push({ id: 'ext-arch', title: 'Películas online', emoji: '🎞️', items: archItems });
-      }
-      // YouTube second — other videos (fallback / complementary)
-      if (ytResults.length > 0) {
-        const ytItems = ytResults.map((r, i) => ({ id: -(i + 1) * 100, title: r.title, poster: r.thumbnail, createdAt: '', _ytVideoId: r.videoId, _ytThumbnail: r.thumbnail, _ytDuration: r.duration })) as unknown as ContentItem[];
-        rows.push({ id: 'ext-yt', title: archiveResults.length > 0 ? 'Otros videos' : 'Más resultados', emoji: '🎬', items: ytItems });
+        rows.push({ id: 'ext-arch', title: 'Películas en Archive.org', emoji: '🎞️', items: archItems });
       }
       return rows;
     }
@@ -1665,16 +1672,17 @@ export default function Home() {
                       </section>
                     );
                   }
-                  const isExtRow = row.id === 'ext-yt' || row.id === 'ext-arch';
+                  const isExtRow = row.id === 'ext-yt' || row.id === 'ext-yt-movies' || row.id === 'ext-yt-others' || row.id === 'ext-arch';
                   if (isExtRow) {
                     const isArchRow = row.id === 'ext-arch';
+                    const isYtOthers = row.id === 'ext-yt-others' || row.id === 'ext-yt';
                     return (
                       <section key={row.id} ref={(el) => { rowRefs.current[rIdx] = el; }}>
                         <div className="flex items-center gap-3 mb-3">
                           {row.emoji && <span className="text-base">{row.emoji}</span>}
                           <h2 className="text-sm sm:text-base font-semibold text-white/70">{row.title}</h2>
                           <span className="text-xs text-white/25">{row.items.length}</span>
-                          {!isArchRow && (
+                          {isYtOthers && (
                             <span className="text-[10px] text-white/30 ml-1">Puede incluir trailers o clips</span>
                           )}
                         </div>
