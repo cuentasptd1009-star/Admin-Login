@@ -2404,6 +2404,19 @@ function SmartLinkImport({ open, onClose, onImported }: {
   );
 }
 
+function extractYtVideoId(url: string): string | null {
+  try {
+    const u = new URL(url.trim());
+    if (u.hostname.includes('youtu.be')) return u.pathname.slice(1).split('?')[0];
+    if (u.hostname.includes('youtube.com')) {
+      if (u.pathname === '/watch') return u.searchParams.get('v');
+      const m = u.pathname.match(/\/(?:embed|v|shorts)\/([^/?]+)/);
+      if (m) return m[1];
+    }
+  } catch {}
+  return null;
+}
+
 function MoviesManager() {
   const qc = useQueryClient();
   const { toast } = useToast();
@@ -2532,18 +2545,6 @@ function MoviesManager() {
     finally { setYtUrlImporting(false); }
   };
 
-  const extractYtVideoId = (url: string): string | null => {
-    try {
-      const u = new URL(url.trim());
-      if (u.hostname.includes('youtu.be')) return u.pathname.slice(1).split('?')[0];
-      if (u.hostname.includes('youtube.com')) {
-        if (u.pathname === '/watch') return u.searchParams.get('v');
-        const m = u.pathname.match(/\/(?:embed|v|shorts)\/([^/?]+)/);
-        if (m) return m[1];
-      }
-    } catch {}
-    return null;
-  };
 
   const handleYtBulkDetect = async () => {
     const urls = ytBulkText.split('\n').map(l => l.trim()).filter(l => l.length > 0);
