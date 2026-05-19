@@ -37,6 +37,17 @@ async function start() {
     }
 
     logger.info({ port }, "Server listening");
+
+    // Keep-alive: ping own health endpoint every 10 min so Render free tier never sleeps
+    const selfUrl = process.env["RENDER_EXTERNAL_URL"];
+    if (selfUrl) {
+      setInterval(() => {
+        fetch(`${selfUrl}/api/healthz`)
+          .then(() => logger.debug("keep-alive ping sent"))
+          .catch(() => {});
+      }, 10 * 60 * 1000);
+      logger.info("Keep-alive enabled");
+    }
   });
 }
 
