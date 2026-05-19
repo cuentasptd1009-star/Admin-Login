@@ -114,22 +114,17 @@ function sanitizeText(str: string, maxLen = 500): string {
 }
 
 function buildYouTubeQuery(raw: string, type: "movie" | "series" = "movie"): string {
+  // Keep the query in Spanish — do NOT translate to English so YouTube returns Spanish-language titles
   let q = raw.trim();
-  q = q.replace(/ciencia ficcion/gi, "science fiction");
-  for (const [es, en] of Object.entries(GENRE_MAP)) {
-    if (!es.includes(" ")) {
-      q = q.replace(new RegExp(`\\b${es}\\b`, "gi"), en);
-    }
-  }
   q = q.replace(FILLER_RE, " ").replace(/\s{2,}/g, " ").trim();
   if (!q || q.length < 2) q = raw.trim();
   if (type === "series") {
-    if (!q.toLowerCase().includes("full episode") && !q.toLowerCase().includes("temporada") && !q.toLowerCase().includes("season")) {
-      q = `${q} full episodes`;
+    if (!q.toLowerCase().includes("temporada") && !q.toLowerCase().includes("episodio") && !q.toLowerCase().includes("serie completa")) {
+      q = `${q} serie completa`;
     }
   } else {
-    if (!q.toLowerCase().includes("full movie") && !q.toLowerCase().includes("pelicula completa")) {
-      q = `${q} full movie`;
+    if (!q.toLowerCase().includes("pelicula completa") && !q.toLowerCase().includes("película completa") && !q.toLowerCase().includes("full movie")) {
+      q = `${q} pelicula completa`;
     }
   }
   return q;
@@ -180,7 +175,7 @@ function cleanIdentifier(id: string): string {
 
 const INNERTUBE_KEY = "AIzaSyAO_FJ2SlqU8Q4STEHLGCilw_Y9_11qcW8";
 const INNERTUBE_CONTEXT = {
-  client: { clientName: "WEB", clientVersion: "2.20240101", hl: "es", gl: "US" },
+  client: { clientName: "WEB", clientVersion: "2.20240101", hl: "es", gl: "MX" },
 };
 
 function extractVideosAndToken(data: any): { videos: any[]; continuationToken: string | null } {
@@ -327,24 +322,22 @@ router.get("/user-search/archive", requireUserAuth, async (req: Request, res: Re
     if (ADULT_RE.test(q)) return res.json({ items: [] });
 
     const smartQ = buildArchiveQuery(q);
-    const params = new URLSearchParams();
-    params.set("q", `mediatype:movies ${smartQ}${ADULT_FILTER}`);
-    params.append("fl[]", "identifier");
-    params.append("fl[]", "title");
-    params.append("fl[]", "year");
-    params.append("fl[]", "creator");
-    params.set("rows", "8");
-    params.set("start", "0");
-    params.set("output", "json");
-    params.append("sort[]", "downloads desc");
 
-    const res2 = await fetch(`${ARCHIVE_SEARCH}?${params}`, { signal: AbortSignal.timeout(12000) });
-    if (!res2.ok) return res.json({ items: [] });
+    const makeParams = (langFilter: string) => {
+      const p = new URLSearchParams();
+      p.set("q", `mediatype:movies${langFilter} ${smartQ}${ADULT_FILTER}`);
+      p.append("fl[]", "identifier");
+      p.append("fl[]", "title");
+      p.append("fl[]", "year");
+      p.append("fl[]", "creator");
+      p.set("rows", "12");
+      p.set("start", "0");
+      p.set("output", "json");
+      p.append("sort[]", "downloads desc");
+      return p;
+    };
 
-    const data = await res2.json();
-    const docs: any[] = data.response?.docs || [];
-
-    const items = docs.map((d: any) => ({
+    const mapDocs = (docs: any[]) => docs.map((d: any) => ({
       identifier: cleanIdentifier(String(d.identifier || "")),
       title: d.title ? String(Array.isArray(d.title) ? d.title[0] : d.title) : d.identifier,
       year: d.year ? String(d.year) : undefined,
@@ -352,6 +345,23 @@ router.get("/user-search/archive", requireUserAuth, async (req: Request, res: Re
       thumbnail: `https://archive.org/services/img/${cleanIdentifier(String(d.identifier || ""))}`,
     })).filter((i: any) => i.identifier);
 
+    // First try Spanish-language results
+    const SPANISH_LANG = ` language:(spanish OR espanol OR español OR castellano)`;
+    const res2 = await fetch(`${ARCHIVE_SEARCH}?${makeParams(SPANISH_LANG)}`, { signal: AbortSignal.timeout(12000) });
+    if (!res2.ok) return res.json({ items: [] });
+    const data2 = await res2.json();
+    let docs: any[] = data2.response?.docs || [];
+
+    // If Spanish returns fewer than 3 results, fall back to any language (broader search)
+    if (docs.length < 3) {
+      const resFallback = await fetch(`${ARCHIVE_SEARCH}?${makeParams("")}`, { signal: AbortSignal.timeout(12000) });
+      if (resFallback.ok) {
+        const dataFallback = await resFallback.json();
+        docs = dataFallback.response?.docs || [];
+      }
+    }
+
+    const items = mapDocs(docs);
     res.json({ items });
   } catch {
     res.json({ items: [] });
