@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useLocation } from 'wouter';
 import { Play, Pause, Volume2, VolumeX, Maximize, Minimize, ArrowLeft, RotateCcw, SkipBack, SkipForward, AlertTriangle, ChevronRight } from 'lucide-react';
 import { YouTubePlayerPage } from '@/components/YouTubePlayerPage';
@@ -64,6 +64,12 @@ export default function VodPlayerPage() {
 
   const format: VideoFormat = storedFormat || detectFormat(rawUrl);
 
+  // D-pad controls order for the bottom bar
+  const vodControls = useMemo(
+    () => ['back', 'skipback', 'play', 'skipfwd', ...(nextEpisodeId ? ['nextepisode'] : []), 'mute', 'fullscreen'],
+    [nextEpisodeId]
+  );
+
   const videoRef = useRef<HTMLVideoElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const cleanupRef = useRef<(() => void) | null>(null);
@@ -88,6 +94,8 @@ export default function VodPlayerPage() {
   const [nextEpFocused, setNextEpFocused] = useState(false);
   const [nextEpCountdown, setNextEpCountdown] = useState(0);
   const [errorBtnIndex, setErrorBtnIndex] = useState(0);
+  // D-pad control focus index: matches vodControls array below
+  const [ctrlFocusIdx, setCtrlFocusIdx] = useState(2); // default: play button
 
   useEffect(() => {
     showNextEpRef.current = showNextEp;
@@ -406,31 +414,53 @@ export default function VodPlayerPage() {
         case ' ':
         case 'MediaPlayPause':
           e.preventDefault(); togglePlay(); showControlsTemporarily(); break;
+
+        case 'ArrowLeft':
+          e.preventDefault();
+          if (e.shiftKey) { skip(-30); showControlsTemporarily(); }
+          else { setCtrlFocusIdx(p => Math.max(0, p - 1)); showControlsTemporarily(); }
+          break;
+
         case 'ArrowRight':
           e.preventDefault();
-          if (showNextEp && nextEpisodeId) { setNextEpFocused(true); showControlsTemporarily(); }
-          else { skip(e.shiftKey ? 30 : 10); showControlsTemporarily(); }
+          if (e.shiftKey) { skip(30); showControlsTemporarily(); }
+          else if (showNextEp && nextEpisodeId && ctrlFocusIdx >= vodControls.length - 1) {
+            setNextEpFocused(true); showControlsTemporarily();
+          } else {
+            setCtrlFocusIdx(p => Math.min(vodControls.length - 1, p + 1)); showControlsTemporarily();
+          }
           break;
-        case 'ArrowLeft': e.preventDefault(); skip(e.shiftKey ? -30 : -10); showControlsTemporarily(); break;
-        case 'ArrowUp': e.preventDefault(); { const v = videoRef.current; if (v) v.volume = Math.min(1, v.volume + 0.1); } break;
-        case 'ArrowDown': e.preventDefault(); { const v = videoRef.current; if (v) v.volume = Math.max(0, v.volume - 0.1); } break;
-        case 'MediaFastForward':
-          e.preventDefault(); skip(10); showControlsTemporarily(); break;
-        case 'MediaRewind':
-          e.preventDefault(); skip(-10); showControlsTemporarily(); break;
-        case 'VolumeUp':
-          e.preventDefault(); { const v = videoRef.current; if (v) v.volume = Math.min(1, v.volume + 0.1); } break;
-        case 'VolumeDown':
-          e.preventDefault(); { const v = videoRef.current; if (v) v.volume = Math.max(0, v.volume - 0.1); } break;
-        case 'VolumeMute':
-          e.preventDefault(); toggleMute(); break;
-        case 'f': case 'F': toggleFullscreen(); break;
-        case 'm': case 'M': toggleMute(); break;
+
+        case 'ArrowUp':
+          e.preventDefault();
+          { const v = videoRef.current; if (v) v.volume = Math.min(1, v.volume + 0.1); }
+          showControlsTemporarily(); break;
+
+        case 'ArrowDown':
+          e.preventDefault();
+          { const v = videoRef.current; if (v) v.volume = Math.max(0, v.volume - 0.1); }
+          showControlsTemporarily(); break;
+
         case 'Enter':
           e.preventDefault();
-          if (showNextEp && nextEpisodeId) goNextEpisode();
-          else togglePlay();
-          break;
+          switch (vodControls[ctrlFocusIdx]) {
+            case 'back': setLocation(backUrl); break;
+            case 'skipback': skip(-10); break;
+            case 'play': togglePlay(); break;
+            case 'skipfwd': skip(10); break;
+            case 'nextepisode': if (nextEpisodeId) goNextEpisode(); break;
+            case 'mute': toggleMute(); break;
+            case 'fullscreen': toggleFullscreen(); break;
+          }
+          showControlsTemporarily(); break;
+
+        case 'MediaFastForward': e.preventDefault(); skip(10); showControlsTemporarily(); break;
+        case 'MediaRewind': e.preventDefault(); skip(-10); showControlsTemporarily(); break;
+        case 'VolumeUp': e.preventDefault(); { const v = videoRef.current; if (v) v.volume = Math.min(1, v.volume + 0.1); } break;
+        case 'VolumeDown': e.preventDefault(); { const v = videoRef.current; if (v) v.volume = Math.max(0, v.volume - 0.1); } break;
+        case 'VolumeMute': e.preventDefault(); toggleMute(); break;
+        case 'f': case 'F': toggleFullscreen(); break;
+        case 'm': case 'M': toggleMute(); break;
         case 'Escape': case 'Backspace':
           e.preventDefault();
           if (document.fullscreenElement) document.exitFullscreen();
@@ -441,7 +471,7 @@ export default function VodPlayerPage() {
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [error, errorBtnIndex, showNextEp, nextEpFocused, nextEpisodeId, togglePlay, skip, toggleMute, toggleFullscreen, backUrl, setLocation, showControlsTemporarily]);
+  }, [error, errorBtnIndex, showNextEp, nextEpFocused, nextEpisodeId, ctrlFocusIdx, vodControls, togglePlay, skip, toggleMute, toggleFullscreen, backUrl, setLocation, showControlsTemporarily]);
 
   const handleRetry = () => {
     retryCountRef.current = 0;
@@ -631,7 +661,7 @@ export default function VodPlayerPage() {
           <div className="flex items-start gap-3">
             <button
               onClick={() => setLocation(backUrl)}
-              className="p-2.5 rounded-full bg-black/40 text-white backdrop-blur hover:bg-black/60 transition-all flex-shrink-0 mt-0.5"
+              className={`p-2.5 rounded-full bg-black/40 text-white backdrop-blur hover:bg-black/60 transition-all flex-shrink-0 mt-0.5 ${vodControls[ctrlFocusIdx] === 'back' ? 'ring-2 ring-primary scale-105' : ''}`}
             >
               <ArrowLeft className="w-5 h-5 sm:w-6 sm:h-6" />
             </button>
@@ -671,7 +701,7 @@ export default function VodPlayerPage() {
           <div className="flex items-center justify-center gap-2 sm:gap-4">
             <button
               onClick={() => skip(-10)}
-              className="p-2.5 sm:p-3 rounded-full bg-black/40 text-white backdrop-blur hover:bg-black/60 transition-all"
+              className={`p-2.5 sm:p-3 rounded-full bg-black/40 text-white backdrop-blur hover:bg-black/60 transition-all ${vodControls[ctrlFocusIdx] === 'skipback' ? 'ring-2 ring-primary scale-110' : ''}`}
               title="-10s"
             >
               <SkipBack className="w-4 h-4 sm:w-5 sm:h-5" />
@@ -679,7 +709,7 @@ export default function VodPlayerPage() {
 
             <button
               onClick={togglePlay}
-              className="p-3.5 sm:p-5 rounded-full bg-primary text-white transition-all shadow-lg hover:scale-105 hover:bg-primary/90"
+              className={`p-3.5 sm:p-5 rounded-full bg-primary text-white transition-all shadow-lg hover:scale-105 hover:bg-primary/90 ${vodControls[ctrlFocusIdx] === 'play' ? 'ring-4 ring-white scale-110' : ''}`}
             >
               {isPlaying
                 ? <Pause className="w-6 h-6 sm:w-8 sm:h-8 fill-current" />
@@ -688,7 +718,7 @@ export default function VodPlayerPage() {
 
             <button
               onClick={() => skip(10)}
-              className="p-2.5 sm:p-3 rounded-full bg-black/40 text-white backdrop-blur hover:bg-black/60 transition-all"
+              className={`p-2.5 sm:p-3 rounded-full bg-black/40 text-white backdrop-blur hover:bg-black/60 transition-all ${vodControls[ctrlFocusIdx] === 'skipfwd' ? 'ring-2 ring-primary scale-110' : ''}`}
               title="+10s"
             >
               <SkipForward className="w-4 h-4 sm:w-5 sm:h-5" />
@@ -698,7 +728,7 @@ export default function VodPlayerPage() {
               <button
                 onClick={goNextEpisode}
                 className={`flex items-center gap-1.5 px-3 py-2 rounded-full text-xs font-semibold transition-all ${
-                  nextEpFocused
+                  nextEpFocused || vodControls[ctrlFocusIdx] === 'nextepisode'
                     ? 'bg-primary text-white ring-2 ring-white/50 scale-105'
                     : 'bg-primary/80 text-white hover:bg-primary'
                 }`}
@@ -709,7 +739,7 @@ export default function VodPlayerPage() {
               </button>
             )}
 
-            <div className="flex items-center gap-1.5 sm:gap-2 bg-black/40 rounded-full px-2.5 sm:px-3 py-1.5 sm:py-2 backdrop-blur">
+            <div className={`flex items-center gap-1.5 sm:gap-2 bg-black/40 rounded-full px-2.5 sm:px-3 py-1.5 sm:py-2 backdrop-blur ${vodControls[ctrlFocusIdx] === 'mute' ? 'ring-2 ring-primary' : ''}`}>
               <button onClick={toggleMute} className="p-1 sm:p-1.5 text-white">
                 {isMuted || volume === 0
                   ? <VolumeX className="w-4 h-4 sm:w-5 sm:h-5" />
@@ -730,7 +760,7 @@ export default function VodPlayerPage() {
 
             <button
               onClick={toggleFullscreen}
-              className="p-2.5 sm:p-3 rounded-full bg-black/40 text-white backdrop-blur hover:bg-black/60 transition-all"
+              className={`p-2.5 sm:p-3 rounded-full bg-black/40 text-white backdrop-blur hover:bg-black/60 transition-all ${vodControls[ctrlFocusIdx] === 'fullscreen' ? 'ring-2 ring-primary scale-110' : ''}`}
             >
               {isFullscreen
                 ? <Minimize className="w-4 h-4 sm:w-5 sm:h-5" />
@@ -739,7 +769,7 @@ export default function VodPlayerPage() {
           </div>
 
           <p className="text-center text-white/25 text-[9px] sm:text-[10px] pb-1">
-            Espacio Reproducir · ◄► ±10s · Shift+◄► ±30s · F Pantalla completa · M Silencio
+            ◄► Navegar · Enter Seleccionar · ↑↓ Volumen · Space Pausa · Shift+◄► ±30s
           </p>
         </div>
       </div>

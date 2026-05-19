@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback } from 'react';
+import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { Play, Pause, ArrowLeft, Maximize2, Minimize2, SkipBack, SkipForward, Heart, ChevronRight } from 'lucide-react';
 import { loadYouTubeApi } from '@/lib/youtube-api';
 import { saveProgress, saveEpisodeProgress, saveExternalProgress, clearExternalProgress } from '@/lib/user-data';
@@ -58,8 +58,14 @@ export function YouTubePlayerPage({ videoId, title, onBack, isFav, onFavToggle, 
   const [duration, setDuration] = useState(0);
   const [showNextEp, setShowNextEp] = useState(false);
   const [coverBars, setCoverBars] = useState(true);
-  // D-pad control focus: 0=skip-10, 1=play/pause, 2=skip+10, 3=fullscreen, -1=none
+  // D-pad control focus — built dynamically; -1=none
   const [ctrlFocusIdx, setCtrlFocusIdx] = useState(-1);
+  // Controls list: back | (fav?) | skip-10 | play | skip+10 | fullscreen
+  const ytControls = useMemo(
+    () => ['back', ...(onFavToggle !== undefined ? ['fav'] : []), 'skip-10', 'play', 'skip+10', 'fullscreen'],
+    [onFavToggle]
+  );
+  const ytPlayIdx = ytControls.indexOf('play');
 
   // Reset next-ep state whenever the video changes
   useEffect(() => {
@@ -78,10 +84,10 @@ export function YouTubePlayerPage({ videoId, title, onBack, isFav, onFavToggle, 
 
   const flashControls = useCallback(() => {
     setCtrlVisible(true);
-    setCtrlFocusIdx(1); // default focus: play/pause
+    setCtrlFocusIdx(ytPlayIdx); // default focus: play/pause button
     if (ctrlTimerRef.current) clearTimeout(ctrlTimerRef.current);
     ctrlTimerRef.current = setTimeout(() => { setCtrlVisible(false); setCtrlFocusIdx(-1); }, 4000);
-  }, []);
+  }, [ytPlayIdx]);
 
   // Poll current time while playing + save progress every ~5s
   useEffect(() => {
@@ -361,8 +367,7 @@ export function YouTubePlayerPage({ videoId, title, onBack, isFav, onFavToggle, 
         case 'ArrowLeft':
           e.preventDefault();
           if (ctrlFocusIdx >= 0) {
-            // D-pad: navigate controls left (wrap: 0=skip-10, 1=play, 2=skip+10, 3=fullscreen)
-            setCtrlFocusIdx(p => (p - 1 + 4) % 4);
+            setCtrlFocusIdx(p => Math.max(0, p - 1));
             flashControls();
           } else {
             skip(-10);
@@ -372,7 +377,7 @@ export function YouTubePlayerPage({ videoId, title, onBack, isFav, onFavToggle, 
         case 'ArrowRight':
           e.preventDefault();
           if (ctrlFocusIdx >= 0) {
-            setCtrlFocusIdx(p => (p + 1) % 4);
+            setCtrlFocusIdx(p => Math.min(ytControls.length - 1, p + 1));
             flashControls();
           } else {
             skip(10);
@@ -380,13 +385,11 @@ export function YouTubePlayerPage({ videoId, title, onBack, isFav, onFavToggle, 
           }
           break;
         case 'ArrowUp':
-          // Up = enter fullscreen (expand)
           e.preventDefault();
           if (!isFullscreen) { doToggleFullscreen(); }
           flashControls();
           break;
         case 'ArrowDown':
-          // Down = exit fullscreen (minimize)
           e.preventDefault();
           if (isFullscreen) { doToggleFullscreen(); }
           flashControls();
@@ -395,12 +398,13 @@ export function YouTubePlayerPage({ videoId, title, onBack, isFav, onFavToggle, 
         case 'Enter':
           e.preventDefault();
           if (ctrlFocusIdx >= 0) {
-            // Activate focused control
-            switch (ctrlFocusIdx) {
-              case 0: skip(-10); break;
-              case 1: if (!hasStarted) startPlayback(); else togglePlay(); break;
-              case 2: skip(10); break;
-              case 3: doToggleFullscreen(); break;
+            switch (ytControls[ctrlFocusIdx]) {
+              case 'back': onBack(); break;
+              case 'fav': onFavToggle?.(); break;
+              case 'skip-10': skip(-10); break;
+              case 'play': if (!hasStarted) startPlayback(); else togglePlay(); break;
+              case 'skip+10': skip(10); break;
+              case 'fullscreen': doToggleFullscreen(); break;
             }
             flashControls();
           } else if (showNextEp && onNextEpisode) {
@@ -434,7 +438,7 @@ export function YouTubePlayerPage({ videoId, title, onBack, isFav, onFavToggle, 
     window.addEventListener('keydown', handler, { capture: true });
     return () => window.removeEventListener('keydown', handler, { capture: true });
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ytEnded, endBtnIndex, hasStarted, showNextEp, ctrlFocusIdx, skip, togglePlay, startPlayback, doToggleFullscreen, flashControls, isNativeFullscreen, isCssFullscreen, isFullscreen, onBack, onNextEpisode]);
+  }, [ytEnded, endBtnIndex, hasStarted, showNextEp, ctrlFocusIdx, ytControls, skip, togglePlay, startPlayback, doToggleFullscreen, flashControls, isNativeFullscreen, isCssFullscreen, isFullscreen, onBack, onNextEpisode, onFavToggle]);
 
   const progress = duration > 0 ? (currentTime / duration) * 100 : 0;
   const ctrlBtn = 'w-11 h-11 rounded-xl bg-black/50 backdrop-blur border border-white/15 text-white flex items-center justify-center active:scale-95 transition-all';
@@ -549,7 +553,7 @@ export function YouTubePlayerPage({ videoId, title, onBack, isFav, onFavToggle, 
         <div className={`absolute top-0 inset-x-0 flex items-center gap-3 px-4 pt-4 ${ctrlVisible ? 'pointer-events-auto' : ''}`}>
           <button
             onClick={e => { e.stopPropagation(); onBack(); }}
-            className="flex items-center gap-2 text-white/90 hover:text-white transition-colors"
+            className={`flex items-center gap-2 text-white/90 hover:text-white transition-colors rounded-lg px-1 py-1 ${ytControls[ctrlFocusIdx] === 'back' ? 'ring-2 ring-white scale-105 bg-white/10' : ''}`}
           >
             <ArrowLeft className="w-5 h-5" />
             <span className="text-sm font-medium truncate max-w-[160px] sm:max-w-sm">{title}</span>
@@ -557,7 +561,7 @@ export function YouTubePlayerPage({ videoId, title, onBack, isFav, onFavToggle, 
           {onFavToggle !== undefined && (
             <button
               onClick={e => { e.stopPropagation(); onFavToggle(); }}
-              className={`ml-auto w-10 h-10 rounded-xl bg-black/50 backdrop-blur border border-white/15 flex items-center justify-center active:scale-95 transition-all ${isFav ? 'text-red-400 !border-red-400/40 !bg-red-500/20' : 'text-white'}`}
+              className={`ml-auto w-10 h-10 rounded-xl bg-black/50 backdrop-blur border border-white/15 flex items-center justify-center active:scale-95 transition-all ${isFav ? 'text-red-400 !border-red-400/40 !bg-red-500/20' : 'text-white'} ${ytControls[ctrlFocusIdx] === 'fav' ? 'ring-2 ring-white scale-110' : ''}`}
             >
               <Heart className={`w-5 h-5 ${isFav ? 'fill-red-400' : ''}`} />
             </button>
@@ -602,7 +606,7 @@ export function YouTubePlayerPage({ videoId, title, onBack, isFav, onFavToggle, 
           <div className="flex items-center justify-between pb-1">
             <button
               onClick={e => { e.stopPropagation(); skip(-10); containerRef.current?.focus({ preventScroll: true }); }}
-              className={`${ctrlBtn} ${ctrlFocusIdx === 0 ? 'ring-2 ring-white scale-110 bg-white/20' : ''}`}
+              className={`${ctrlBtn} ${ytControls[ctrlFocusIdx] === 'skip-10' ? 'ring-2 ring-white scale-110 bg-white/20' : ''}`}
               title="-10s"
             >
               <SkipBack className="w-5 h-5" />
@@ -610,7 +614,7 @@ export function YouTubePlayerPage({ videoId, title, onBack, isFav, onFavToggle, 
 
             <button
               onClick={e => { e.stopPropagation(); togglePlay(); containerRef.current?.focus({ preventScroll: true }); }}
-              className={`w-14 h-14 rounded-full bg-red-600 text-white flex items-center justify-center shadow-lg active:scale-95 transition-all hover:bg-red-500 ${ctrlFocusIdx === 1 ? 'ring-4 ring-white scale-110' : ''}`}
+              className={`w-14 h-14 rounded-full bg-red-600 text-white flex items-center justify-center shadow-lg active:scale-95 transition-all hover:bg-red-500 ${ytControls[ctrlFocusIdx] === 'play' ? 'ring-4 ring-white scale-110' : ''}`}
             >
               {isPlaying
                 ? <Pause className="w-7 h-7 fill-white" />
@@ -619,7 +623,7 @@ export function YouTubePlayerPage({ videoId, title, onBack, isFav, onFavToggle, 
 
             <button
               onClick={e => { e.stopPropagation(); skip(10); containerRef.current?.focus({ preventScroll: true }); }}
-              className={`${ctrlBtn} ${ctrlFocusIdx === 2 ? 'ring-2 ring-white scale-110 bg-white/20' : ''}`}
+              className={`${ctrlBtn} ${ytControls[ctrlFocusIdx] === 'skip+10' ? 'ring-2 ring-white scale-110 bg-white/20' : ''}`}
               title="+10s"
             >
               <SkipForward className="w-5 h-5" />
@@ -638,7 +642,7 @@ export function YouTubePlayerPage({ videoId, title, onBack, isFav, onFavToggle, 
 
             <button
               onClick={e => { e.stopPropagation(); doToggleFullscreen(); containerRef.current?.focus({ preventScroll: true }); }}
-              className={`${ctrlBtn} ${ctrlFocusIdx === 3 ? 'ring-2 ring-white scale-110 bg-white/20' : ''}`}
+              className={`${ctrlBtn} ${ytControls[ctrlFocusIdx] === 'fullscreen' ? 'ring-2 ring-white scale-110 bg-white/20' : ''}`}
               title={isFullscreen ? 'Salir de pantalla completa' : 'Pantalla completa'}
             >
               {isFullscreen ? <Minimize2 className="w-5 h-5" /> : <Maximize2 className="w-5 h-5" />}
@@ -648,7 +652,7 @@ export function YouTubePlayerPage({ videoId, title, onBack, isFav, onFavToggle, 
           {/* D-pad hint */}
           {ctrlFocusIdx >= 0 && (
             <p className="text-center text-[10px] text-white/30 pb-1 select-none">
-              ← → navegar · Enter seleccionar · ↑ pantalla completa · ↓ minimizar
+              ◄► Navegar · Enter Seleccionar · ↑ Pantalla completa · ↓ Minimizar
             </p>
           )}
         </div>
