@@ -57,6 +57,7 @@ export default function Login() {
 
   const inputRef = useRef<HTMLInputElement>(null);
   const submitRef = useRef<HTMLButtonElement>(null);
+  const codeRef = useRef('');
   const qrRef = useRef<HTMLButtonElement>(null);
   const installRef = useRef<HTMLButtonElement>(null);
   const shortcutRef = useRef<HTMLButtonElement>(null);
@@ -117,16 +118,19 @@ export default function Login() {
 
   const handleCodeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const val = e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 5);
+    codeRef.current = val;
     setCode(val);
     setErrorMsg('');
   };
 
   const handleSubmit = (e?: React.FormEvent) => {
     e?.preventDefault();
-    if (!code.trim()) return;
+    // codeRef.current is always up-to-date even when called from a stale onConfirm closure
+    const codeToSubmit = (codeRef.current || code).trim();
+    if (!codeToSubmit) return;
     setErrorMsg('');
     loginMutation.mutate(
-      { data: { code, deviceId: navigator.userAgent } },
+      { data: { code: codeToSubmit, deviceId: navigator.userAgent } },
       {
         onSuccess: (data) => {
           if (data.sessionConflict) {
@@ -198,7 +202,12 @@ export default function Login() {
             inputRef.current?.blur();
             openKeyboard(inputRef.current, {
               value: code,
-              onChange: (v) => { setCode(v.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 5)); setErrorMsg(''); },
+              onChange: (v) => {
+                const clean = v.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 5);
+                codeRef.current = clean;
+                setCode(clean);
+                setErrorMsg('');
+              },
               onConfirm: handleSubmit,
               label: 'Código de acceso',
               maxLength: 5,
