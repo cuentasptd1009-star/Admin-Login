@@ -12,6 +12,7 @@ interface Props {
   onFavToggle?: () => void;
   movieId?: number;
   startFrom?: number;
+  onHideFromCatalog?: () => void;
   // Episode-specific (for series)
   episodeId?: number;
   seriesId?: number;
@@ -38,7 +39,7 @@ function formatTime(s: number): string {
   return `${m}:${String(sec).padStart(2, '0')}`;
 }
 
-export function YouTubePlayerPage({ videoId, title, onBack, isFav, onFavToggle, movieId, startFrom, externalId, episodeId, seriesId, seasonId, seasonNumber, episodeNumber, nextEpisodeId, nextEpisodeTitle, nextEpisodeNumber, nextSeasonNumber, seriesTitle, onNextEpisode }: Props) {
+export function YouTubePlayerPage({ videoId, title, onBack, isFav, onFavToggle, movieId, startFrom, onHideFromCatalog, externalId, episodeId, seriesId, seasonId, seasonNumber, episodeNumber, nextEpisodeId, nextEpisodeTitle, nextEpisodeNumber, nextSeasonNumber, seriesTitle, onNextEpisode }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const playerDivRef = useRef<HTMLDivElement>(null);
   const ytPlayerRef = useRef<any>(null);
@@ -502,13 +503,23 @@ export function YouTubePlayerPage({ videoId, title, onBack, isFav, onFavToggle, 
             <p className="text-white font-semibold text-lg">Video no disponible</p>
             <p className="text-white/60 text-sm leading-relaxed">{ytError}</p>
           </div>
-          <button
-            onClick={onBack}
-            className="mt-2 flex items-center gap-2 px-5 py-2.5 rounded-xl bg-white/10 hover:bg-white/20 border border-white/15 text-white text-sm font-medium transition-all active:scale-95"
-          >
-            <ArrowLeft className="w-4 h-4" />
-            Volver
-          </button>
+          <div className="flex flex-col items-center gap-3">
+            <button
+              onClick={onBack}
+              className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-white/10 hover:bg-white/20 border border-white/15 text-white text-sm font-medium transition-all active:scale-95"
+            >
+              <ArrowLeft className="w-4 h-4" />
+              Volver
+            </button>
+            {onHideFromCatalog && (
+              <button
+                onClick={onHideFromCatalog}
+                className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-red-900/40 hover:bg-red-900/60 border border-red-500/30 text-red-300 text-sm font-medium transition-all active:scale-95"
+              >
+                Ocultar del catálogo
+              </button>
+            )}
+          </div>
         </div>
       )}
 

@@ -708,11 +708,27 @@ export default function PlayerPage() {
   if (currentFormat === 'youtube' || detectFormat(currentUrl) === 'youtube') {
     const ytId = extractYouTubeId(currentUrl);
     if (!ytId) return <div className="flex items-center justify-center h-screen bg-black text-white/60 text-sm">URL de YouTube inválida</div>;
+
+    const handleHideFromCatalog = movieId ? async () => {
+      try {
+        const token = getToken('admin');
+        if (!token) return;
+        await fetch(`/api/movies/${movieId}/hidden`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+          body: JSON.stringify({ hidden: true }),
+        });
+        setLocation(backUrl);
+      } catch {}
+    } : undefined;
+
     return (
       <YouTubePlayerPage
         videoId={ytId}
         title={currentTitle}
         onBack={() => setLocation(backUrl)}
+        movieId={movieId ? Number(movieId) : undefined}
+        onHideFromCatalog={handleHideFromCatalog}
         episodeId={episodeId ? Number(episodeId) : undefined}
         seriesId={seriesId ? Number(seriesId) : undefined}
         seasonId={seasonId ? Number(seasonId) : undefined}

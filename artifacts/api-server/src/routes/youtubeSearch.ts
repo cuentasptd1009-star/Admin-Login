@@ -176,9 +176,39 @@ router.get("/youtube/video-info", requireAdminAuth, async (req: Request, res: Re
 
   try {
     // oEmbed doesn't require an API key
+    // 200 = public & embeddable, 401 = exists but embedding disabled, 404 = not found/private
     const oembedUrl = `https://www.youtube.com/oembed?url=${encodeURIComponent(url)}&format=json`;
     const oembedRes = await fetch(oembedUrl, { signal: AbortSignal.timeout(10000) });
-    if (!oembedRes.ok) return res.status(400).json({ error: "No se pudo obtener información del video. Verifica que sea público." });
+
+    if (oembedRes.status === 401 || oembedRes.status === 403) {
+      // Video exists but author disabled embedding — will show "Video no disponible" in players
+      return res.json({
+        videoId,
+        title: null,
+        thumbnail: `https://img.youtube.com/vi/${videoId}/mqdefault.jpg`,
+        thumbnailHQ: `https://img.youtube.com/vi/${videoId}/hqdefault.jpg`,
+        channel: null,
+        description: null,
+        year: null,
+        url: `https://www.youtube.com/watch?v=${videoId}`,
+        embeddingDisabled: true,
+      });
+    }
+
+    if (!oembedRes.ok) {
+      return res.json({
+        videoId,
+        title: null,
+        thumbnail: `https://img.youtube.com/vi/${videoId}/mqdefault.jpg`,
+        thumbnailHQ: `https://img.youtube.com/vi/${videoId}/hqdefault.jpg`,
+        channel: null,
+        description: null,
+        year: null,
+        url: `https://www.youtube.com/watch?v=${videoId}`,
+        notFound: true,
+      });
+    }
+
     const oembed = await oembedRes.json() as any;
 
     let description: string | null = null;

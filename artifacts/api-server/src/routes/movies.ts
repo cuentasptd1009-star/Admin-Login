@@ -1,7 +1,7 @@
 import { Router, type Request, type Response } from "express";
 import { db } from "@workspace/db";
 import { moviesTable, accessCodesTable } from "@workspace/db";
-import { eq, asc, ilike } from "drizzle-orm";
+import { eq, asc, ilike, and, or, ne } from "drizzle-orm";
 import {
   CreateMovieBody,
   UpdateMovieBody,
@@ -39,12 +39,18 @@ router.get("/movies", async (req: Request, res: Response) => {
     return;
   }
 
+  const isAdmin = !!adminSession;
+
   let query = db.select().from(moviesTable).$dynamic();
 
+  const hideHidden = !isAdmin ? ne(moviesTable.hidden, true) : undefined;
+
   if (params.category) {
-    query = query.where(eq(moviesTable.category, params.category));
+    query = query.where(hideHidden ? and(eq(moviesTable.category, params.category), hideHidden) : eq(moviesTable.category, params.category));
   } else if (params.search) {
-    query = query.where(ilike(moviesTable.title, `%${params.search}%`));
+    query = query.where(hideHidden ? and(ilike(moviesTable.title, `%${params.search}%`), hideHidden) : ilike(moviesTable.title, `%${params.search}%`));
+  } else if (hideHidden) {
+    query = query.where(hideHidden);
   }
 
   const movies = await query.orderBy(asc(moviesTable.order));
@@ -221,6 +227,16 @@ router.put("/movies/:id", requireAdminAuth, async (req: Request, res: Response) 
   }
   cache.invalidatePrefix("movies:");
   res.json({ ...updated, createdAt: updated.createdAt.toISOString() });
+});
+
+router.patch("/movies/:id/hidden", requireAdminAuth, async (req: Request, res: Response) => {
+  const id = parseInt(String(req.params.id));
+  if (!id || isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
+  const hidden = req.body?.hidden === true || req.body?.hidden === false ? Boolean(req.body.hidden) : true;
+  const [updated] = await db.update(moviesTable).set({ hidden }).where(eq(moviesTable.id, id)).returning();
+  if (!updated) { res.status(404).json({ error: "Not found" }); return; }
+  cache.invalidatePrefix("movies:");
+  res.json({ success: true, id, hidden });
 });
 
 router.delete("/movies/:id", requireAdminAuth, async (req: Request, res: Response) => {

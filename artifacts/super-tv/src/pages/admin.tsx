@@ -2499,7 +2499,7 @@ function MoviesManager() {
   const [ytUrlInput, setYtUrlInput] = useState('');
   const [ytUrlLoading, setYtUrlLoading] = useState(false);
   const [ytUrlError, setYtUrlError] = useState('');
-  const [ytUrlPreview, setYtUrlPreview] = useState<{ videoId: string; title: string; thumbnail: string; thumbnailHQ: string; channel: string; description: string | null; year: string | null; url: string } | null>(null);
+  const [ytUrlPreview, setYtUrlPreview] = useState<{ videoId: string; title: string | null; thumbnail: string; thumbnailHQ: string; channel: string | null; description: string | null; year: string | null; url: string; embeddingDisabled?: boolean; notFound?: boolean } | null>(null);
   const [ytUrlCategory, setYtUrlCategory] = useState('');
   const [ytUrlImporting, setYtUrlImporting] = useState(false);
   const [ytUrlImported, setYtUrlImported] = useState(false);
@@ -3258,6 +3258,24 @@ function MoviesManager() {
 
             {ytUrlPreview && (
               <div className="space-y-3">
+                {ytUrlPreview.notFound && (
+                  <div className="flex items-start gap-2.5 px-3 py-2.5 rounded-lg border border-red-500/30 bg-red-500/10">
+                    <span className="text-red-400 text-base mt-0.5">✕</span>
+                    <div>
+                      <p className="text-sm font-semibold text-red-400">Video no encontrado</p>
+                      <p className="text-xs text-red-400/80 leading-snug mt-0.5">Este video fue eliminado, es privado o la URL no es válida. No se mostrará a los clientes.</p>
+                    </div>
+                  </div>
+                )}
+                {ytUrlPreview.embeddingDisabled && (
+                  <div className="flex items-start gap-2.5 px-3 py-2.5 rounded-lg border border-yellow-500/30 bg-yellow-500/10">
+                    <span className="text-yellow-400 text-base mt-0.5">⚠</span>
+                    <div>
+                      <p className="text-sm font-semibold text-yellow-400">Video bloqueado para reproducción externa</p>
+                      <p className="text-xs text-yellow-400/80 leading-snug mt-0.5">El autor no permite reproducir este video fuera de YouTube. Los clientes verán "Video no disponible" al intentar reproducirlo.</p>
+                    </div>
+                  </div>
+                )}
                 <div className="flex gap-3 p-3 rounded-lg border border-border bg-background">
                   <img
                     src={ytUrlPreview.thumbnail}
@@ -3266,8 +3284,10 @@ function MoviesManager() {
                     onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }}
                   />
                   <div className="flex-1 min-w-0 space-y-1">
-                    <p className="text-sm font-semibold leading-snug line-clamp-2">{ytUrlPreview.title}</p>
-                    <p className="text-xs text-muted-foreground">{ytUrlPreview.channel}{ytUrlPreview.year ? ` · ${ytUrlPreview.year}` : ''}</p>
+                    <p className="text-sm font-semibold leading-snug line-clamp-2">{ytUrlPreview.title || ytUrlPreview.url}</p>
+                    {ytUrlPreview.channel && (
+                      <p className="text-xs text-muted-foreground">{ytUrlPreview.channel}{ytUrlPreview.year ? ` · ${ytUrlPreview.year}` : ''}</p>
+                    )}
                     {ytUrlPreview.description && (
                       <p className="text-xs text-muted-foreground line-clamp-2">{ytUrlPreview.description}</p>
                     )}
@@ -3279,8 +3299,8 @@ function MoviesManager() {
                   onChange={e => setYtUrlCategory(e.target.value)}
                 />
                 <div className="flex gap-2">
-                  <Button onClick={importYtUrl} disabled={ytUrlImporting} className="flex-1">
-                    {ytUrlImporting ? <><Loader2 className="w-4 h-4 animate-spin mr-2" />Importando...</> : 'Importar película'}
+                  <Button onClick={importYtUrl} disabled={ytUrlImporting || !!ytUrlPreview.notFound} className="flex-1" variant={ytUrlPreview.embeddingDisabled ? 'outline' : 'default'}>
+                    {ytUrlImporting ? <><Loader2 className="w-4 h-4 animate-spin mr-2" />Importando...</> : ytUrlPreview.embeddingDisabled ? 'Importar de todas formas' : 'Importar película'}
                   </Button>
                   <Button variant="outline" onClick={() => setShowYtUrl(false)}>Cancelar</Button>
                 </div>
