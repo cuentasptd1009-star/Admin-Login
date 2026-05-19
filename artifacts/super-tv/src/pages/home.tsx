@@ -80,7 +80,7 @@ function getSearchGridCols(): number {
 }
 
 function isGridRow(rowId: string): boolean {
-  return rowId === 'ext-yt' || rowId === 'ext-arch';
+  return rowId === 'ext-yt' || rowId === 'ext-yt-movies' || rowId === 'ext-yt-others' || rowId === 'ext-arch';
 }
 
 function buildMiniProxyUrl(ch: { id: number; streamUrl: string }): { url: string; streamFormat: string } {
