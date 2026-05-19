@@ -1063,11 +1063,16 @@ export default function Home() {
             e.preventDefault();
             setColIndex(p => Math.min(p + 1, currentLen - 1));
             break;
-          case 'ArrowLeft':
+          case 'ArrowLeft': {
             e.preventDefault();
-            if (colIndex > 0) setColIndex(p => Math.max(p - 1, 0));
-            else goToSidebar();
+            const gridColsLeft = activeTab === 'channels'
+              ? getChannelGridCols()
+              : isGridRow(currentRow?.id ?? '') ? getSearchGridCols() : null;
+            const atLeftEdge = colIndex === 0 || (gridColsLeft !== null && colIndex % gridColsLeft === 0);
+            if (atLeftEdge) goToSidebar();
+            else setColIndex(p => Math.max(p - 1, 0));
             break;
+          }
           case 'ArrowDown': {
             e.preventDefault();
             const gridColsDown = activeTab === 'channels'
