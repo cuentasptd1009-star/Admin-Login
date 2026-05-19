@@ -63,12 +63,24 @@ const ADULT_RE = /\b(xxx|porno?|pornog\w*|sexo?|sexual\w*|er[oó]tic[ao]?|adulto
 
 function getChannelGridCols(): number {
   const w = window.innerWidth;
-  if (w >= 1536) return 10;
-  if (w >= 1280) return 8;
+  if (w >= 1536) return 7;
+  if (w >= 1280) return 6;
+  if (w >= 1024) return 5;
+  if (w >= 768) return 4;
+  if (w >= 640) return 3;
+  return 2;
+}
+
+function getSearchGridCols(): number {
+  const w = window.innerWidth;
   if (w >= 1024) return 6;
   if (w >= 768) return 5;
   if (w >= 640) return 4;
   return 3;
+}
+
+function isGridRow(rowId: string): boolean {
+  return rowId === 'ext-yt' || rowId === 'ext-arch';
 }
 
 function buildMiniProxyUrl(ch: { id: number; streamUrl: string }): { url: string; streamFormat: string } {
@@ -1053,9 +1065,11 @@ export default function Home() {
             break;
           case 'ArrowDown': {
             e.preventDefault();
-            if (activeTab === 'channels') {
-              const cols = getChannelGridCols();
-              const newCol = colIndex + cols;
+            const gridColsDown = activeTab === 'channels'
+              ? getChannelGridCols()
+              : isGridRow(currentRow?.id ?? '') ? getSearchGridCols() : null;
+            if (gridColsDown !== null) {
+              const newCol = colIndex + gridColsDown;
               if (newCol < currentLen) {
                 setColIndex(newCol);
               } else if (rowIndex < activeRows.length - 1) {
@@ -1072,15 +1086,16 @@ export default function Home() {
           }
           case 'ArrowUp': {
             e.preventDefault();
-            if (activeTab === 'channels') {
-              const cols = getChannelGridCols();
-              const newCol = colIndex - cols;
+            const gridColsUp = activeTab === 'channels'
+              ? getChannelGridCols()
+              : isGridRow(currentRow?.id ?? '') ? getSearchGridCols() : null;
+            if (gridColsUp !== null) {
+              const newCol = colIndex - gridColsUp;
               if (newCol >= 0) {
                 setColIndex(newCol);
               } else if (rowIndex > 0) {
                 setRowIndex(p => p - 1); setColIndex(0);
-              } else if (channelRows.length > 1 && !searchQuery) {
-                // go to category filter pills
+              } else if (activeTab === 'channels' && channelRows.length > 1 && !searchQuery) {
                 const curIdx = selectedChannelCategory === null ? 0 : (channelRows.findIndex(r => r.title === selectedChannelCategory) + 1);
                 setCatFilterIdx(Math.max(0, curIdx));
                 setZone('catfilter');
