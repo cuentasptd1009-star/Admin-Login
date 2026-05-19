@@ -629,13 +629,15 @@ export default function Home() {
       const rows: ContentRowData[] = [];
       const results = movies.filter(m => m.title.toLowerCase().includes(q));
       if (results.length > 0) rows.push({ id: 'search', title: `Resultados: "${searchQuery}"`, emoji: '🔍', items: results as ContentItem[] });
-      if (ytResults.length > 0) {
-        const ytItems = ytResults.map((r, i) => ({ id: -(i + 1) * 100, title: r.title, poster: r.thumbnail, createdAt: '', _ytVideoId: r.videoId, _ytThumbnail: r.thumbnail })) as unknown as ContentItem[];
-        rows.push({ id: 'ext-yt', title: 'Más resultados', emoji: '🎬', items: ytItems });
-      }
+      // Archive first — real movies (higher priority)
       if (archiveResults.length > 0) {
         const archItems = archiveResults.map((r, i) => ({ id: -(i + 1) * 100 - 50, title: r.title, poster: r.thumbnail, createdAt: '', _archIdentifier: r.identifier, _archThumbnail: r.thumbnail })) as unknown as ContentItem[];
-        rows.push({ id: 'ext-arch', title: 'Clásicos disponibles', emoji: '🎞️', items: archItems });
+        rows.push({ id: 'ext-arch', title: 'Películas online', emoji: '🎞️', items: archItems });
+      }
+      // YouTube second — other videos (fallback / complementary)
+      if (ytResults.length > 0) {
+        const ytItems = ytResults.map((r, i) => ({ id: -(i + 1) * 100, title: r.title, poster: r.thumbnail, createdAt: '', _ytVideoId: r.videoId, _ytThumbnail: r.thumbnail, _ytDuration: r.duration })) as unknown as ContentItem[];
+        rows.push({ id: 'ext-yt', title: archiveResults.length > 0 ? 'Otros videos' : 'Más resultados', emoji: '🎬', items: ytItems });
       }
       return rows;
     }
@@ -1665,16 +1667,20 @@ export default function Home() {
                   }
                   const isExtRow = row.id === 'ext-yt' || row.id === 'ext-arch';
                   if (isExtRow) {
+                    const isArchRow = row.id === 'ext-arch';
                     return (
                       <section key={row.id} ref={(el) => { rowRefs.current[rIdx] = el; }}>
                         <div className="flex items-center gap-3 mb-3">
                           {row.emoji && <span className="text-base">{row.emoji}</span>}
                           <h2 className="text-sm sm:text-base font-semibold text-white/70">{row.title}</h2>
                           <span className="text-xs text-white/25">{row.items.length}</span>
+                          {!isArchRow && (
+                            <span className="text-[10px] text-white/30 ml-1">Puede incluir trailers o clips</span>
+                          )}
                         </div>
                         <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 gap-3">
                           {row.items.map((item, cIdx) => {
-                            const ext = item as unknown as { id: number; title: string; poster?: string };
+                            const ext = item as unknown as { id: number; title: string; poster?: string; _ytDuration?: string };
                             const isFocused = zone === 'rows' && rowIndex === rIdx && colIndex === cIdx;
                             return (
                               <ContentCard
@@ -1682,6 +1688,8 @@ export default function Home() {
                                 title={ext.title}
                                 image={ext.poster ?? null}
                                 isFocused={isFocused}
+                                badge={isArchRow ? 'Película' : null}
+                                duration={!isArchRow && ext._ytDuration ? ext._ytDuration : null}
                                 onClick={() => playItem(item)}
                               />
                             );

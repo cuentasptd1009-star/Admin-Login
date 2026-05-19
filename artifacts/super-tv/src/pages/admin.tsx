@@ -3623,44 +3623,65 @@ function MoviesManager() {
                 <p className="text-xs mt-1 opacity-40">Los videos se reproducen dentro de Super TV usando el reproductor de YouTube</p>
               </div>
             )}
-            {!youtubeLoading && youtubeResults.length > 0 && (
-              <div className="space-y-2">
-                {youtubeResults.map(item => (
-                  <div key={item.videoId} className="flex gap-3 p-3 rounded-lg border border-border bg-card hover:bg-accent/30 transition-colors">
+            {!youtubeLoading && youtubeResults.length > 0 && (() => {
+              const JUNK_RE = /\b(tr[aá]iler|trailer|reseña|resumen|cr[ií]tica|review|top\s*\d+|ranking|explicado|escenas|escena|capitulo|cap[ií]tulo|episodio|temporada|clip|making\s*of|behind|entrevista|interview|analisis|an[aá]lisis|banda\s*sonora|soundtrack|ost\b|music\s*video|lyric|en\s*\d+\s*minutos?|anuncio|avance|promo\b|react\w*|vlog|shorts?\b|teaser|featurette|blooper|fan\s*made|fanmade|fan\s*film|parody|parodia|gameplay|speedrun)\b/i;
+              const parseMins = (t: string) => { if (!t) return -1; const p = t.split(':').map(Number); if (p.some(isNaN)) return -1; return p.length === 3 ? p[0]*60+p[1]+p[2]/60 : p.length === 2 ? p[0]+p[1]/60 : -1; };
+              const isMovie = (v: typeof youtubeResults[0]) => { if (JUNK_RE.test(v.title)) return false; const m = parseMins(v.duration ?? ''); return m === -1 || m >= 60; };
+              const movies = youtubeResults.filter(isMovie);
+              const others = youtubeResults.filter(v => !isMovie(v));
+              const renderItem = (item: typeof youtubeResults[0]) => (
+                <div key={item.videoId} className="flex gap-3 p-3 rounded-lg border border-border bg-card hover:bg-accent/30 transition-colors">
+                  <div className="relative flex-shrink-0">
                     <img
                       src={item.thumbnail}
                       alt=""
-                      className="w-24 h-14 object-cover rounded flex-shrink-0 bg-muted"
+                      className="w-24 h-14 object-cover rounded bg-muted"
                       onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }}
                     />
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-start justify-between gap-2">
-                        <div className="min-w-0">
-                          <p className="font-medium text-sm leading-tight line-clamp-2">{item.title}</p>
-                          <p className="text-xs text-muted-foreground mt-0.5 flex items-center gap-2 flex-wrap">
-                            {item.duration && <span className="text-primary/70">{item.duration}</span>}
-                            {item.channel && <span className="text-muted-foreground/60 truncate max-w-[180px]">{item.channel}</span>}
-                          </p>
-                        </div>
-                        {youtubeImported.has(item.videoId) ? (
-                          <span className="text-xs text-green-400 bg-green-500/10 border border-green-500/20 px-2 py-1 rounded flex-shrink-0">✓ Importada</span>
-                        ) : (
-                          <Button
-                            size="sm"
-                            className="flex-shrink-0 h-7 text-xs"
-                            disabled={youtubeImporting.has(item.videoId)}
-                            onClick={() => youtubeImport(item)}
-                          >
-                            {youtubeImporting.has(item.videoId) ? <Loader2 className="w-3 h-3 animate-spin mr-1" /> : <Plus className="w-3 h-3 mr-1" />}
-                            Importar
-                          </Button>
-                        )}
+                    {item.duration && (
+                      <span className="absolute bottom-1 right-1 bg-black/80 text-white text-[9px] font-semibold px-1 py-0.5 rounded tabular-nums">{item.duration}</span>
+                    )}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <p className="font-medium text-sm leading-tight line-clamp-2">{item.title}</p>
+                        <p className="text-xs text-muted-foreground mt-0.5 truncate max-w-[220px]">{item.channel}</p>
                       </div>
+                      {youtubeImported.has(item.videoId) ? (
+                        <span className="text-xs text-green-400 bg-green-500/10 border border-green-500/20 px-2 py-1 rounded flex-shrink-0">✓ Importada</span>
+                      ) : (
+                        <Button
+                          size="sm"
+                          className="flex-shrink-0 h-7 text-xs"
+                          disabled={youtubeImporting.has(item.videoId)}
+                          onClick={() => youtubeImport(item)}
+                        >
+                          {youtubeImporting.has(item.videoId) ? <Loader2 className="w-3 h-3 animate-spin mr-1" /> : <Plus className="w-3 h-3 mr-1" />}
+                          Importar
+                        </Button>
+                      )}
                     </div>
                   </div>
-                ))}
-              </div>
-            )}
+                </div>
+              );
+              return (
+                <div className="space-y-2">
+                  {movies.length > 0 && (
+                    <>
+                      <p className="text-xs font-semibold text-primary/80 uppercase tracking-wide px-1 pt-1">Películas completas ({movies.length})</p>
+                      {movies.map(renderItem)}
+                    </>
+                  )}
+                  {others.length > 0 && (
+                    <>
+                      <p className="text-xs font-semibold text-muted-foreground/60 uppercase tracking-wide px-1 pt-3 border-t border-border mt-3">Otros videos ({others.length})</p>
+                      {others.map(renderItem)}
+                    </>
+                  )}
+                </div>
+              );
+            })()}
           </div>
 
           <DialogFooter className="px-4 py-3 border-t border-border flex-shrink-0">

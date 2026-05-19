@@ -41,6 +41,7 @@ interface ContentCardProps {
   progress?: WatchProgress | null;
   isFavorite?: boolean;
   badge?: string | null;
+  duration?: string | null;
   portrait?: boolean;
   onClick: () => void;
   onFavoriteToggle?: (e: React.MouseEvent) => void;
@@ -58,6 +59,7 @@ export const ContentCard = memo(function ContentCard({
   progress,
   isFavorite = false,
   badge,
+  duration,
   portrait = false,
   onClick,
   onFavoriteToggle,
@@ -175,6 +177,12 @@ export const ContentCard = memo(function ContentCard({
         {badge && (
           <span className="absolute top-1.5 left-1.5 bg-primary text-primary-foreground text-[9px] font-bold px-1.5 py-0.5 rounded-full uppercase tracking-wide z-10 shadow-lg">
             {badge}
+          </span>
+        )}
+
+        {duration && (
+          <span className="absolute bottom-1.5 right-1.5 bg-black/80 text-white text-[9px] font-semibold px-1.5 py-0.5 rounded z-10 shadow-md tabular-nums">
+            {duration}
           </span>
         )}
 
