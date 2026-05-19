@@ -199,19 +199,23 @@ export default function Login() {
         case 'Enter':
           if (focusZone === 'input') {
             e.preventDefault();
-            inputRef.current?.blur();
-            openKeyboard(inputRef.current, {
-              value: code,
-              onChange: (v) => {
-                const clean = v.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 5);
-                codeRef.current = clean;
-                setCode(clean);
-                setErrorMsg('');
-              },
-              onConfirm: handleSubmit,
-              label: 'Código de acceso',
-              maxLength: 5,
-            });
+            if (isTV) {
+              inputRef.current?.blur();
+              openKeyboard(inputRef.current, {
+                value: code,
+                onChange: (v) => {
+                  const clean = v.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 5);
+                  codeRef.current = clean;
+                  setCode(clean);
+                  setErrorMsg('');
+                },
+                onConfirm: handleSubmit,
+                label: 'Código de acceso',
+                maxLength: 5,
+              });
+            } else {
+              handleSubmit();
+            }
           } else if (focusZone === 'submit' && !isTyping) {
             e.preventDefault();
             handleSubmit();
