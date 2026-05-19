@@ -45,7 +45,7 @@ import { setMiniPlayerState, updateMiniPlayerState, getMiniPlayerState, subscrib
 import { useTvKeyboard } from '@/hooks/use-tv-keyboard';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Play, Pause, LogOut, Search, Tv, Film, Tv2, X, Download, Share2, UserCircle2, AlertTriangle, Lock, Mic, MicOff, Home as HomeIcon, Smartphone, Menu, Heart, Clock, Trash2, Youtube, Maximize2, Minimize2 } from 'lucide-react';
-import { getFavorites, getAllProgress, getHistory, toggleFavorite, getAllSeriesProgress, getExternalFavorites, getExternalHistory, toggleExternalFavorite, addExternalHistory, isExternalFavorite, removeExternalHistory, clearExternalHistory, type ExternalItem, getSearchHistory, addSearchHistory, removeSearchHistory, clearSearchHistory, getSeriesFavorites, toggleSeriesFavorite, getExternalProgress } from '@/lib/user-data';
+import { getFavorites, getAllProgress, getHistory, toggleFavorite, getAllSeriesProgress, getExternalFavorites, getExternalHistory, toggleExternalFavorite, addExternalHistory, isExternalFavorite, removeExternalHistory, clearExternalHistory, type ExternalItem, getSearchHistory, addSearchHistory, removeSearchHistory, clearSearchHistory, getSeriesFavorites, toggleSeriesFavorite, getExternalProgress, getChannelFavorites, toggleChannelFavorite } from '@/lib/user-data';
 import { useVoiceSearch } from '@/hooks/use-voice-search';
 import logo from '@assets/imagen_1777670460131.png';
 import channelDefaultLogo from '@assets/image_1778868245666.png';
@@ -57,7 +57,7 @@ import { HeroBanner, type HeroBannerItem } from '@/components/HeroBanner';
 import { fetchSeries, type SeriesItem } from '@/lib/api';
 
 type TabKey = 'home' | 'channels' | 'movies' | 'series' | 'favorites';
-type NavZone = 'sidebar' | 'rows' | 'miniplayer' | 'hero' | 'catfilter';
+type NavZone = 'sidebar' | 'rows' | 'miniplayer' | 'hero' | 'catfilter' | 'actionmenu';
 
 const ADULT_RE = /\b(xxx|porno?|pornog\w*|sexo?|sexual\w*|er[oó]tic[ao]?|adulto?|nsfw|hentai|nude|desnud[ao]|naked|putit[ao]?|obscen\w*|escort|prostitu\w*)\b/i;
 
@@ -482,6 +482,10 @@ export default function Home() {
 
   const [favorites, setFavorites] = useState<number[]>(() => getFavorites());
   const [seriesFavIds, setSeriesFavIds] = useState<number[]>(() => getSeriesFavorites());
+  const [channelFavIds, setChannelFavIds] = useState<number[]>(() => getChannelFavorites());
+
+  type ActionMenuEntry = { label: string; icon: string; action: () => void; danger?: boolean };
+  const [actionMenu, setActionMenu] = useState<{ entries: ActionMenuEntry[]; idx: number; title: string } | null>(null);
   const [allProgress, setAllProgress] = useState(() => getAllProgress());
   const [watchHistory, setWatchHistory] = useState(() => getHistory());
   const [externalFavs, setExternalFavs] = useState<ExternalItem[]>(() => getExternalFavorites());
@@ -822,6 +826,52 @@ export default function Home() {
     else setLocation(`/pelicula/${item.id}`);
   }, [setLocation, isExpired]);
 
+  const openActionMenu = useCallback((rowId: string, item: ContentItem) => {
+    const entries: ActionMenuEntry[] = [];
+    const isYt = !!(item as any)._ytVideoId;
+    const isArch = !!(item as any)._archIdentifier;
+    const isSer = !!(item as any)._isSeries;
+    const isCh = isChannel(item);
+    const itemTitle = (item as any).title ?? (item as any).name ?? '';
+
+    if (isCh) {
+      entries.push({ label: 'Ver canal', icon: '📡', action: () => { setActionMenu(null); setZone('rows'); playItem(item); } });
+      const isFav = getChannelFavorites().includes(item.id);
+      entries.push({ label: isFav ? 'Quitar de favoritos' : 'Agregar a favoritos', icon: isFav ? '💔' : '❤️', action: () => { toggleChannelFavorite(item.id); setChannelFavIds(getChannelFavorites()); setActionMenu(null); setZone('rows'); } });
+    } else if (isSer) {
+      entries.push({ label: 'Ver serie', icon: '📺', action: () => { setActionMenu(null); setZone('rows'); playItem(item); } });
+      const isFav = getSeriesFavorites().includes(item.id);
+      entries.push({ label: isFav ? 'Quitar de favoritos' : 'Agregar a favoritos', icon: isFav ? '💔' : '❤️', action: () => { toggleSeriesFavorite(item.id); setSeriesFavIds(getSeriesFavorites()); setActionMenu(null); setZone('rows'); } });
+    } else if (isYt) {
+      entries.push({ label: 'Reproducir', icon: '▶', action: () => { setActionMenu(null); setZone('rows'); playItem(item); } });
+      const extId = `yt_${(item as any)._ytVideoId}`;
+      const isFav = isExternalFavorite(extId);
+      entries.push({ label: isFav ? 'Quitar de favoritos' : 'Agregar a favoritos', icon: isFav ? '💔' : '❤️', action: () => { toggleExternalFavorite({ id: extId, source: 'youtube', title: itemTitle, thumbnail: (item as any)._ytThumbnail ?? '', videoId: (item as any)._ytVideoId, updatedAt: Date.now() }); setExternalFavs(getExternalFavorites()); setActionMenu(null); setZone('rows'); } });
+    } else if (isArch) {
+      entries.push({ label: 'Reproducir', icon: '▶', action: () => { setActionMenu(null); setZone('rows'); playItem(item); } });
+    } else {
+      entries.push({ label: rowId === 'continue' ? 'Continuar viendo' : 'Reproducir', icon: '▶', action: () => { setActionMenu(null); setZone('rows'); playItem(item); } });
+      const isFav = getFavorites().includes(item.id);
+      entries.push({ label: isFav ? 'Quitar de favoritos' : 'Agregar a favoritos', icon: isFav ? '💔' : '❤️', action: () => { toggleFavorite(item.id); setFavorites(getFavorites()); setActionMenu(null); setZone('rows'); } });
+      if (rowId === 'continue') {
+        entries.push({ label: 'Quitar de seguir viendo', icon: '🗑️', danger: true, action: () => { try { localStorage.removeItem(`supertv_prog_${item.id}`); } catch {} setAllProgress(getAllProgress()); setActionMenu(null); setZone('rows'); } });
+      }
+    }
+    setActionMenu({ entries, idx: 0, title: itemTitle });
+    setZone('actionmenu');
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [playItem]);
+
+  const openSeriesActionMenu = useCallback((series: SeriesItem) => {
+    const entries: ActionMenuEntry[] = [];
+    entries.push({ label: 'Ver serie', icon: '📺', action: () => { setActionMenu(null); setZone('rows'); playSeriesItem(series); } });
+    const isFav = getSeriesFavorites().includes(series.id);
+    entries.push({ label: isFav ? 'Quitar de favoritos' : 'Agregar a favoritos', icon: isFav ? '💔' : '❤️', action: () => { toggleSeriesFavorite(series.id); setSeriesFavIds(getSeriesFavorites()); setActionMenu(null); setZone('rows'); } });
+    setActionMenu({ entries, idx: 0, title: series.title });
+    setZone('actionmenu');
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [playSeriesItem]);
+
   const openProfile = useCallback(() => setShowProfile(true), []);
 
   const handleSaveProfile = async (name: string, avatarId: number | null) => {
@@ -891,6 +941,31 @@ export default function Home() {
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (showProfile || showHint || showShortcutHint) return;
+
+      // Action menu navigation — intercept all keys while the menu is open
+      if (zone === 'actionmenu' && actionMenu) {
+        e.preventDefault();
+        switch (normalizeKey(e)) {
+          case 'ArrowDown':
+            setActionMenu(prev => prev ? { ...prev, idx: Math.min(prev.idx + 1, prev.entries.length - 1) } : null);
+            break;
+          case 'ArrowUp':
+            setActionMenu(prev => prev ? { ...prev, idx: Math.max(prev.idx - 1, 0) } : null);
+            break;
+          case 'Enter':
+          case 'MediaPlayPause':
+            if (actionMenu.entries[actionMenu.idx]) {
+              actionMenu.entries[actionMenu.idx].action();
+            }
+            break;
+          case 'Escape':
+          case 'Backspace':
+            setActionMenu(null);
+            setZone('rows');
+            break;
+        }
+        return;
+      }
       const activeEl = document.activeElement;
       const isInputFocused = activeEl instanceof HTMLInputElement || activeEl instanceof HTMLTextAreaElement || (activeEl instanceof HTMLElement && activeEl.isContentEditable);
       if (isInputFocused) {
@@ -1138,9 +1213,10 @@ export default function Home() {
             e.preventDefault();
             if (activeTab === 'series') {
               const item = seriesRows[rowIndex]?.items[colIndex];
-              if (item) playSeriesItem(item);
+              if (item) openSeriesActionMenu(item);
             } else {
-              if (currentRow?.items[colIndex]) playItem(currentRow.items[colIndex]);
+              const item = currentRow?.items[colIndex];
+              if (item) openActionMenu(currentRow?.id ?? '', item);
             }
             break;
           }
@@ -1150,7 +1226,7 @@ export default function Home() {
     };
     window.addEventListener('keydown', handleKeyDown, { capture: true });
     return () => window.removeEventListener('keydown', handleKeyDown, { capture: true });
-  }, [zone, sidebarIdx, sidebarItems, rowIndex, colIndex, heroBtnIndex, heroBannerIdx, activeRows, seriesRows, activeTab, playItem, playSeriesItem, actionButtons, showProfile, showHint, showShortcutHint, isListening, startListening, stopListening, showHero, hoveredHero, heroBannerItems, openKeyboard, searchQuery, openProfile, catFilterIdx, channelRows, selectedChannelCategory]);  // eslint-disable-line react-hooks/exhaustive-deps
+  }, [zone, sidebarIdx, sidebarItems, rowIndex, colIndex, heroBtnIndex, heroBannerIdx, activeRows, seriesRows, activeTab, playItem, playSeriesItem, actionButtons, showProfile, showHint, showShortcutHint, isListening, startListening, stopListening, showHero, hoveredHero, heroBannerItems, openKeyboard, searchQuery, openProfile, catFilterIdx, channelRows, selectedChannelCategory, actionMenu, openActionMenu, openSeriesActionMenu]);  // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <div className="min-h-screen bg-[#141414] text-white flex select-none">
@@ -1850,6 +1926,42 @@ export default function Home() {
             <h2 className="text-base font-bold text-white">Acceso directo al escritorio</h2>
             <p className="text-sm text-white/60">En tu navegador, busca la opción "Agregar a pantalla de inicio" o "Instalar aplicación" para crear un acceso directo.</p>
             <button onClick={() => setShowShortcutHint(false)} className="w-full py-2.5 bg-primary text-primary-foreground rounded-xl text-sm font-medium hover:bg-primary/90 transition-colors">Entendido</button>
+          </div>
+        </div>
+      )}
+
+      {/* ── ACTION MENU OVERLAY ── */}
+      {actionMenu && (
+        <div
+          className="fixed inset-0 z-[300] bg-black/70 backdrop-blur-sm flex items-center justify-center"
+          onClick={() => { setActionMenu(null); setZone('rows'); }}
+        >
+          <div
+            className="bg-zinc-900 border border-white/10 rounded-2xl overflow-hidden w-72 shadow-2xl"
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="px-5 py-3.5 border-b border-white/8">
+              <p className="text-white/50 text-[11px] font-medium uppercase tracking-widest">Opciones</p>
+              <p className="text-white text-sm font-semibold truncate mt-0.5">{actionMenu.title}</p>
+            </div>
+            {actionMenu.entries.map((entry, i) => (
+              <button
+                key={i}
+                onClick={() => entry.action()}
+                className={`w-full flex items-center gap-3 px-5 py-4 text-sm font-medium transition-colors border-b border-white/5 last:border-0
+                  ${i === actionMenu.idx
+                    ? entry.danger
+                      ? 'bg-red-600/25 text-red-300'
+                      : 'bg-primary/20 text-white'
+                    : entry.danger
+                      ? 'text-red-400/70 hover:bg-red-600/10 hover:text-red-300'
+                      : 'text-white/70 hover:bg-white/5 hover:text-white'
+                  }`}
+              >
+                <span className="text-base w-6 text-center">{entry.icon}</span>
+                <span>{entry.label}</span>
+              </button>
+            ))}
           </div>
         </div>
       )}

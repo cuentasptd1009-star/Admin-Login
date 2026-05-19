@@ -175,6 +175,31 @@ export function toggleSeriesFavorite(seriesId: number): boolean {
   }
 }
 
+export function getChannelFavorites(): number[] {
+  try {
+    const raw = localStorage.getItem(`${P}ch_favorites`);
+    return raw ? (JSON.parse(raw) as number[]) : [];
+  } catch { return []; }
+}
+
+export function isChannelFavorite(channelId: number): boolean {
+  return getChannelFavorites().includes(channelId);
+}
+
+export function toggleChannelFavorite(channelId: number): boolean {
+  const favs = getChannelFavorites();
+  const idx = favs.indexOf(channelId);
+  if (idx === -1) {
+    favs.unshift(channelId);
+    try { localStorage.setItem(`${P}ch_favorites`, JSON.stringify(favs)); } catch {}
+    return true;
+  } else {
+    favs.splice(idx, 1);
+    try { localStorage.setItem(`${P}ch_favorites`, JSON.stringify(favs)); } catch {}
+    return false;
+  }
+}
+
 // ── External content (YouTube / Archive) ────────────────────────────────────
 
 export interface ExternalItem {
