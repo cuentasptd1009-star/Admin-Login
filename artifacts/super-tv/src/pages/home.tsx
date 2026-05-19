@@ -638,13 +638,13 @@ export default function Home() {
         const ytMovies = ytResults.filter(isFullMovie);
         const ytOthers = ytResults.filter(r => !isFullMovie(r));
         const toItem = (r: typeof ytResults[0], i: number) => ({ id: -(i + 1) * 100, title: r.title, poster: r.thumbnail, createdAt: '', _ytVideoId: r.videoId, _ytThumbnail: r.thumbnail, _ytDuration: r.duration }) as unknown as ContentItem;
-        if (ytMovies.length > 0) rows.push({ id: 'ext-yt-movies', title: 'Películas en YouTube', emoji: '🎬', items: ytMovies.map(toItem) });
-        if (ytOthers.length > 0) rows.push({ id: 'ext-yt-others', title: 'Otros videos', emoji: '📹', items: ytOthers.map(toItem) });
+        if (ytMovies.length > 0) rows.push({ id: 'ext-yt-movies', title: 'Más resultados', emoji: '🎬', items: ytMovies.map(toItem) });
+        if (ytOthers.length > 0) rows.push({ id: 'ext-yt-others', title: 'Otros resultados', emoji: '🎬', items: ytOthers.map(toItem) });
       }
       // 4. Archive.org — last (classic/free movies)
       if (archiveResults.length > 0) {
         const archItems = archiveResults.map((r, i) => ({ id: -(i + 1) * 100 - 50, title: r.title, poster: r.thumbnail, createdAt: '', _archIdentifier: r.identifier, _archThumbnail: r.thumbnail })) as unknown as ContentItem[];
-        rows.push({ id: 'ext-arch', title: 'Películas en Archive.org', emoji: '🎞️', items: archItems });
+        rows.push({ id: 'ext-arch', title: 'Resultados adicionales', emoji: '🎬', items: archItems });
       }
       return rows;
     }
