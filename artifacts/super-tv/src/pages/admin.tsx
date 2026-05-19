@@ -2459,6 +2459,13 @@ function MoviesManager() {
   const [showSmartImport, setShowSmartImport] = useState(false);
   const folderRef = useRef<HTMLInputElement>(null);
 
+  const [movieSearch, setMovieSearch] = useState('');
+  const [showUrlChecker, setShowUrlChecker] = useState(false);
+  const [urlCheckItems, setUrlCheckItems] = useState<Array<{ id: number; title: string; url: string; status: 'pending' | 'ok' | 'broken' | 'checking' }>>([]);
+  const [urlChecking, setUrlChecking] = useState(false);
+  const [urlCheckSel, setUrlCheckSel] = useState<Set<number>>(new Set());
+  const urlCheckStopRef = useRef(false);
+
   // Archive.org browser state
   const [showArchive, setShowArchive] = useState(false);
   const [archiveQuery, setArchiveQuery] = useState('');
@@ -3006,11 +3013,49 @@ function MoviesManager() {
     toast({ title: `${ok} película(s) importada(s)` });
   };
 
+  const checkMovieUrls = async () => {
+    const items = moviesList.map(m => ({ id: m.id, title: m.title, url: m.filePath, status: 'pending' as const }));
+    setUrlCheckItems(items);
+    setUrlChecking(true);
+    setUrlCheckSel(new Set());
+    urlCheckStopRef.current = false;
+    const token = getToken('admin');
+    for (let i = 0; i < items.length; i++) {
+      if (urlCheckStopRef.current) break;
+      setUrlCheckItems(prev => prev.map((r, j) => j === i ? { ...r, status: 'checking' } : r));
+      try {
+        const r = await fetch(`${BASE_URL}/api/check-url`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+          body: JSON.stringify({ url: items[i].url }),
+          signal: AbortSignal.timeout(12000),
+        });
+        const d = await r.json();
+        setUrlCheckItems(prev => prev.map((r2, j) => j === i ? { ...r2, status: d.ok ? 'ok' : 'broken' } : r2));
+      } catch {
+        setUrlCheckItems(prev => prev.map((r2, j) => j === i ? { ...r2, status: 'broken' } : r2));
+      }
+    }
+    setUrlChecking(false);
+  };
+
+  const deleteCheckedMovies = async () => {
+    if (!confirm(`¿Eliminar ${urlCheckSel.size} película(s) seleccionada(s)?`)) return;
+    const ids = [...urlCheckSel];
+    for (const id of ids) {
+      try { await deleteMutation.mutateAsync({ params: { id } }); } catch { /* ignore */ }
+    }
+    setUrlCheckSel(new Set());
+    setUrlCheckItems(prev => prev.filter(r => !ids.includes(r.id)));
+    toast({ title: `${ids.length} película(s) eliminada(s)` });
+  };
+
   if (isLoading) return <div className="text-muted-foreground">Cargando...</div>;
 
-  const displayMovies = sortMode
+  const displayMovies = (sortMode
     ? sortedIds.map(id => moviesList.find(m => m.id === id)).filter(Boolean) as typeof moviesList
-    : moviesList;
+    : moviesList
+  ).filter(m => !movieSearch || m.title.toLowerCase().includes(movieSearch.toLowerCase()) || (m.category || '').toLowerCase().includes(movieSearch.toLowerCase()));
 
   return (
     <div className="space-y-4">
@@ -3041,6 +3086,9 @@ function MoviesManager() {
             <Button size="sm" variant="outline" onClick={() => { setShowYtBulkImport(true); setYtBulkText(''); setYtBulkDetected([]); setYtBulkResults(null); setYtBulkCategory(''); }}>
               <Youtube className="w-4 h-4 mr-2 text-red-500" />Lista URLs YouTube
             </Button>
+            <Button size="sm" variant="outline" onClick={() => { setShowUrlChecker(p => !p); if (!showUrlChecker) { setUrlCheckItems([]); setUrlCheckSel(new Set()); } }}>
+              <AlertTriangle className="w-4 h-4 mr-2" />Verificar URLs
+            </Button>
             {selectedMovieIds.size > 0 && (
               <Button size="sm" variant="destructive" onClick={handleBulkDelete} disabled={deleteMutation.isPending}>
                 <Trash2 className="w-4 h-4 mr-2" />Eliminar {selectedMovieIds.size} seleccionada(s)
@@ -3056,6 +3104,79 @@ function MoviesManager() {
           )}
         </div>
       </div>
+
+      {!sortMode && (
+        <div className="flex gap-2 items-center flex-wrap">
+          <div className="relative flex-1 min-w-48 max-w-sm">
+            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+            <Input value={movieSearch} onChange={e => setMovieSearch(e.target.value)} placeholder="Buscar películas por título o categoría..." className="pl-8 bg-background" />
+          </div>
+          {movieSearch && <span className="text-xs text-muted-foreground">{displayMovies.length} resultado(s)</span>}
+        </div>
+      )}
+
+      {showUrlChecker && (
+        <div className="border border-border rounded-xl p-4 space-y-3 bg-secondary/20">
+          <div className="flex items-center justify-between flex-wrap gap-2">
+            <div className="flex items-center gap-2">
+              <AlertTriangle className="w-4 h-4 text-amber-400" />
+              <p className="text-sm font-medium">Verificador de URLs</p>
+              {urlCheckItems.length > 0 && (
+                <span className="text-xs text-muted-foreground">
+                  {urlCheckItems.filter(r => r.status === 'ok').length} OK · {urlCheckItems.filter(r => r.status === 'broken').length} rotas · {urlCheckItems.filter(r => r.status === 'checking').length} verificando
+                </span>
+              )}
+            </div>
+            <div className="flex gap-2 flex-wrap">
+              {urlCheckSel.size > 0 && (
+                <Button size="sm" variant="destructive" onClick={deleteCheckedMovies}>
+                  <Trash2 className="w-3.5 h-3.5 mr-1" />Eliminar {urlCheckSel.size} seleccionada(s)
+                </Button>
+              )}
+              {urlCheckItems.length > 0 && !urlChecking && (
+                <Button size="sm" variant="outline" onClick={() => {
+                  const brokenIds = new Set(urlCheckItems.filter(r => r.status === 'broken').map(r => r.id));
+                  setUrlCheckSel(brokenIds);
+                }}>
+                  Seleccionar rotas ({urlCheckItems.filter(r => r.status === 'broken').length})
+                </Button>
+              )}
+              {urlChecking ? (
+                <Button size="sm" variant="outline" onClick={() => { urlCheckStopRef.current = true; setUrlChecking(false); }}>
+                  <Loader2 className="w-3.5 h-3.5 animate-spin mr-1" />Detener
+                </Button>
+              ) : (
+                <Button size="sm" onClick={checkMovieUrls} disabled={moviesList.length === 0}>
+                  <RefreshCw className="w-3.5 h-3.5 mr-1" />Verificar {moviesList.length} URL(s)
+                </Button>
+              )}
+            </div>
+          </div>
+          {urlCheckItems.length > 0 && (
+            <div className="space-y-1 max-h-72 overflow-y-auto pr-1">
+              {urlCheckItems.map(item => (
+                <div key={item.id} className={`flex items-center gap-2 p-2 rounded-lg text-xs border transition-colors ${item.status === 'broken' ? 'border-destructive/40 bg-destructive/5' : item.status === 'ok' ? 'border-green-500/20 bg-green-500/5' : 'border-border bg-background/40'}`}>
+                  <input type="checkbox" className="accent-primary w-3.5 h-3.5 cursor-pointer flex-shrink-0"
+                    checked={urlCheckSel.has(item.id)}
+                    onChange={() => setUrlCheckSel(prev => { const n = new Set(prev); n.has(item.id) ? n.delete(item.id) : n.add(item.id); return n; })}
+                  />
+                  <span className="flex-shrink-0 w-14 font-semibold">
+                    {item.status === 'checking' ? <span className="text-amber-400 flex items-center gap-1"><Loader2 className="w-3 h-3 animate-spin" />...</span>
+                      : item.status === 'ok' ? <span className="text-green-400">✓ OK</span>
+                      : item.status === 'broken' ? <span className="text-destructive">✗ Rota</span>
+                      : <span className="text-muted-foreground">–</span>}
+                  </span>
+                  <span className="truncate flex-1 font-medium">{item.title}</span>
+                  <span className="truncate text-muted-foreground max-w-[200px] hidden sm:block">{item.url}</span>
+                </div>
+              ))}
+            </div>
+          )}
+          {urlCheckItems.length === 0 && (
+            <p className="text-xs text-muted-foreground text-center py-2">Haz clic en "Verificar" para comprobar todas las URLs</p>
+          )}
+        </div>
+      )}
 
       {sortMode && (
         <p className="text-xs text-muted-foreground flex items-center gap-1">
@@ -4873,6 +4994,12 @@ function SeriesManager() {
   const [editEp, setEditEp] = useState<EpisodeRow | null>(null);
   const [editEpSaving, setEditEpSaving] = useState(false);
 
+  const [showEpUrlChecker, setShowEpUrlChecker] = useState(false);
+  const [epUrlCheckItems, setEpUrlCheckItems] = useState<Array<{ epId: number; seriesTitle: string; seasonTitle: string; epTitle: string; url: string; status: 'pending' | 'ok' | 'broken' | 'checking' }>>([]);
+  const [epUrlChecking, setEpUrlChecking] = useState(false);
+  const [epUrlCheckSel, setEpUrlCheckSel] = useState<Set<number>>(new Set());
+  const epUrlCheckStopRef = useRef(false);
+
   const form0: Partial<SeriesRow> = { title: '', description: '', poster: '', banner: '', category: '', genre: '', year: undefined, featured: false, hidden: false };
   const [createForm, setCreateForm] = useState<Partial<SeriesRow>>(form0);
 
@@ -5145,6 +5272,59 @@ function SeriesManager() {
     setYtManualCreating(false);
   };
 
+  const checkEpisodeUrls = async () => {
+    setEpUrlChecking(true);
+    setEpUrlCheckSel(new Set());
+    epUrlCheckStopRef.current = false;
+    const token = getAdminToken();
+    const items: typeof epUrlCheckItems = [];
+    for (const series of seriesList) {
+      try {
+        const r = await fetch(`${BASE_API}/api/series/${series.id}`, { headers: { Authorization: `Bearer ${token}` } });
+        if (!r.ok) continue;
+        const data = await r.json();
+        for (const season of data.seasons || []) {
+          for (const ep of season.episodes || []) {
+            if (ep.filePath) {
+              items.push({ epId: ep.id, seriesTitle: series.title, seasonTitle: season.title || `T${season.seasonNumber}`, epTitle: ep.title || `E${ep.episodeNumber}`, url: ep.filePath, status: 'pending' });
+            }
+          }
+        }
+      } catch { /* ignore */ }
+    }
+    setEpUrlCheckItems([...items]);
+    for (let i = 0; i < items.length; i++) {
+      if (epUrlCheckStopRef.current) break;
+      setEpUrlCheckItems(prev => prev.map((r, j) => j === i ? { ...r, status: 'checking' } : r));
+      try {
+        const r = await fetch(`${BASE_API}/api/check-url`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+          body: JSON.stringify({ url: items[i].url }),
+          signal: AbortSignal.timeout(12000),
+        });
+        const d = await r.json();
+        setEpUrlCheckItems(prev => prev.map((r2, j) => j === i ? { ...r2, status: d.ok ? 'ok' : 'broken' } : r2));
+      } catch {
+        setEpUrlCheckItems(prev => prev.map((r2, j) => j === i ? { ...r2, status: 'broken' } : r2));
+      }
+    }
+    setEpUrlChecking(false);
+  };
+
+  const deleteCheckedEpisodes = async () => {
+    if (!confirm(`¿Eliminar ${epUrlCheckSel.size} episodio(s) seleccionado(s)?`)) return;
+    const ids = [...epUrlCheckSel];
+    const token = getAdminToken();
+    for (const id of ids) {
+      try { await fetch(`${BASE_API}/api/episodes/${id}`, { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } }); } catch { /* ignore */ }
+    }
+    setEpUrlCheckSel(new Set());
+    setEpUrlCheckItems(prev => prev.filter(r => !ids.includes(r.epId)));
+    toast({ title: `${ids.length} episodio(s) eliminado(s)` });
+    refresh();
+  };
+
   const filtered = seriesList.filter(s => !searchQ || s.title.toLowerCase().includes(searchQ.toLowerCase()));
 
   const SeriesFormFields = ({ form, setForm }: { form: Partial<SeriesRow>; setForm: (v: Partial<SeriesRow>) => void }) => (
@@ -5232,6 +5412,9 @@ function SeriesManager() {
           </Button>
           <Button size="sm" variant="outline" onClick={() => setShowYtManual(p => !p)} className="flex items-center gap-1.5">
             <Youtube className="w-4 h-4" /> Serie YouTube
+          </Button>
+          <Button size="sm" variant="outline" onClick={() => { setShowEpUrlChecker(p => !p); if (!showEpUrlChecker) { setEpUrlCheckItems([]); setEpUrlCheckSel(new Set()); } }} className="flex items-center gap-1.5">
+            <AlertTriangle className="w-4 h-4" /> Verificar URLs
           </Button>
           <Button size="sm" onClick={() => setShowCreate(true)} className="flex items-center gap-1.5">
             <Plus className="w-4 h-4" /> Nueva Serie
@@ -5424,6 +5607,74 @@ function SeriesManager() {
         <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
         <Input value={searchQ} onChange={e => setSearchQ(e.target.value)} placeholder="Buscar series..." className="pl-8 bg-background" />
       </div>
+
+      {showEpUrlChecker && (
+        <div className="border border-border rounded-xl p-4 space-y-3 bg-secondary/20">
+          <div className="flex items-center justify-between flex-wrap gap-2">
+            <div className="flex items-center gap-2">
+              <AlertTriangle className="w-4 h-4 text-amber-400" />
+              <p className="text-sm font-medium">Verificador de URLs de Episodios</p>
+              {epUrlCheckItems.length > 0 && (
+                <span className="text-xs text-muted-foreground">
+                  {epUrlCheckItems.filter(r => r.status === 'ok').length} OK · {epUrlCheckItems.filter(r => r.status === 'broken').length} rotas · {epUrlCheckItems.filter(r => r.status === 'checking').length} verificando
+                </span>
+              )}
+            </div>
+            <div className="flex gap-2 flex-wrap">
+              {epUrlCheckSel.size > 0 && (
+                <Button size="sm" variant="destructive" onClick={deleteCheckedEpisodes}>
+                  <Trash2 className="w-3.5 h-3.5 mr-1" />Eliminar {epUrlCheckSel.size} episodio(s)
+                </Button>
+              )}
+              {epUrlCheckItems.length > 0 && !epUrlChecking && (
+                <Button size="sm" variant="outline" onClick={() => {
+                  const brokenIds = new Set(epUrlCheckItems.filter(r => r.status === 'broken').map(r => r.epId));
+                  setEpUrlCheckSel(brokenIds);
+                }}>
+                  Seleccionar rotos ({epUrlCheckItems.filter(r => r.status === 'broken').length})
+                </Button>
+              )}
+              {epUrlChecking ? (
+                <Button size="sm" variant="outline" onClick={() => { epUrlCheckStopRef.current = true; setEpUrlChecking(false); }}>
+                  <Loader2 className="w-3.5 h-3.5 animate-spin mr-1" />Detener
+                </Button>
+              ) : (
+                <Button size="sm" onClick={checkEpisodeUrls} disabled={seriesList.length === 0}>
+                  <RefreshCw className="w-3.5 h-3.5 mr-1" />Verificar episodios
+                </Button>
+              )}
+            </div>
+          </div>
+          {epUrlCheckItems.length > 0 && (
+            <div className="space-y-1 max-h-72 overflow-y-auto pr-1">
+              {epUrlCheckItems.map((item, i) => (
+                <div key={`${item.epId}-${i}`} className={`flex items-center gap-2 p-2 rounded-lg text-xs border transition-colors ${item.status === 'broken' ? 'border-destructive/40 bg-destructive/5' : item.status === 'ok' ? 'border-green-500/20 bg-green-500/5' : 'border-border bg-background/40'}`}>
+                  <input type="checkbox" className="accent-primary w-3.5 h-3.5 cursor-pointer flex-shrink-0"
+                    checked={epUrlCheckSel.has(item.epId)}
+                    onChange={() => setEpUrlCheckSel(prev => { const n = new Set(prev); n.has(item.epId) ? n.delete(item.epId) : n.add(item.epId); return n; })}
+                  />
+                  <span className="flex-shrink-0 w-14 font-semibold">
+                    {item.status === 'checking' ? <span className="text-amber-400 flex items-center gap-1"><Loader2 className="w-3 h-3 animate-spin" />...</span>
+                      : item.status === 'ok' ? <span className="text-green-400">✓ OK</span>
+                      : item.status === 'broken' ? <span className="text-destructive">✗ Rota</span>
+                      : <span className="text-muted-foreground">–</span>}
+                  </span>
+                  <div className="flex-1 min-w-0">
+                    <p className="truncate font-medium">{item.seriesTitle} · {item.seasonTitle} · {item.epTitle}</p>
+                    <p className="truncate text-muted-foreground hidden sm:block">{item.url}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+          {epUrlCheckItems.length === 0 && !epUrlChecking && (
+            <p className="text-xs text-muted-foreground text-center py-2">Haz clic en "Verificar episodios" para cargar y comprobar todas las URLs</p>
+          )}
+          {epUrlChecking && epUrlCheckItems.length === 0 && (
+            <p className="text-xs text-muted-foreground text-center py-2 flex items-center justify-center gap-2"><Loader2 className="w-3 h-3 animate-spin" />Cargando episodios...</p>
+          )}
+        </div>
+      )}
 
       {showCreate && (
         <div className="border border-border rounded-xl p-4 space-y-4 bg-secondary/20">

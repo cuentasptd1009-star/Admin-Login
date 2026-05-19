@@ -22,6 +22,7 @@ import deviceAuthRouter from "./deviceAuth.js";
 import archiveSearchRouter from "./archiveSearch.js";
 import youtubeSearchRouter from "./youtubeSearch.js";
 import userSearchRouter from "./userSearch.js";
+import checkUrlRouter from "./checkUrl.js";
 
 const router: IRouter = Router();
 
@@ -48,5 +49,6 @@ router.use(deviceAuthRouter);
 router.use(archiveSearchRouter);
 router.use(youtubeSearchRouter);
 router.use(userSearchRouter);
+router.use(checkUrlRouter);
 
 export default router;
